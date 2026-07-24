@@ -29,9 +29,21 @@ async def find_conflict(
     trip_time: dt.time,
     exclude_booking_id: int | None = None,
 ) -> Booking | None:
-    """Return the first conflicting booking, if any, else None."""
+    """Return the first conflicting booking, if any, else None.
+
+    Queries a window of adjacent calendar dates (not just an exact date
+    match) so a trip near midnight is correctly compared against trips on
+    the neighboring day too -- e.g. 11:50pm and 12:10am the next day are 20
+    minutes apart and must be flagged, even though they fall on different
+    `trip_date` values.
+    """
+    window = dt.timedelta(minutes=CONFLICT_WINDOW_MINUTES)
+    trip_dt = dt.datetime.combine(trip_date, trip_time)
+    range_start = (trip_dt - window).date()
+    range_end = (trip_dt + window).date()
+
     stmt = select(Booking).where(
-        Booking.trip_date == trip_date,
+        Booking.trip_date.between(range_start, range_end),
         Booking.status != "cancelled",
     )
     if exclude_booking_id is not None:

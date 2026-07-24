@@ -27,24 +27,28 @@ A conversational AI dispatch assistant for independent taxi drivers in Lebanon. 
 
 ```
 TaxiGo-AI-Production/
+├── Dockerfile                    # single-service build: bundles backend/ + frontend/
+├── .dockerignore
 ├── backend/
 │   ├── main.py                  # FastAPI + Socket.IO ASGI app, static frontend serving
 │   ├── database.py              # async engine/session config
 │   ├── models.py                # ORM model + Pydantic v2 schemas
+│   ├── timezone_utils.py        # Lebanon-timezone now()/today() helpers
 │   ├── routes/                  # bookings, analytics, chat, notifications
 │   ├── services/                # ai_agent, conflict_detector, reminder_service
 │   ├── alembic/                 # migrations (async-aware env.py)
 │   ├── requirements.txt
-│   ├── .env.example
-│   └── Dockerfile
+│   └── .env.example
 ├── frontend/
 │   ├── index.html
+│   ├── config.js                # API_BASE / API_SECRET overrides for split-domain deploys
 │   ├── css/styles.css
 │   ├── js/{translations,voice,charts,notifications,app}.js
 │   ├── manifest.json
 │   ├── service-worker.js
 │   └── icons/
 ├── railway.toml
+├── DEPLOYMENT.md
 └── .gitignore
 ```
 
@@ -87,19 +91,22 @@ The frontend is static — no build step. Two ways to run it locally:
 |---|---|
 | `GROQ_API_KEY` | API key from [console.groq.com](https://console.groq.com); powers the chat agent (`llama-3.3-70b-versatile`). |
 | `DATABASE_URL` | PostgreSQL connection string. Accepts `postgres://`, `postgresql://`, or `postgresql+asyncpg://` — normalized to the asyncpg driver automatically. |
-| `FRONTEND_ORIGIN` | (optional) An additional CORS origin to allow, e.g. your deployed frontend's URL, on top of the built-in localhost origins. |
+| `FRONTEND_ORIGIN` | (optional) An additional CORS origin to allow, e.g. a separately-hosted frontend's URL, on top of the built-in localhost origins. |
+| `DEV_MODE` | (optional) Set to `1`/`true` to auto-create tables on startup via `create_all()` — convenient for a throwaway local dev database. Leave unset in production; Alembic (`alembic upgrade head`) should be the only source of schema truth there. |
+| `API_SECRET` | (optional) If set, every request (except static assets and `/health`) must include a matching `X-API-Secret` header. Leave unset to keep the API open (the default). If set, also set `window.TAXIGO_API_SECRET` in `frontend/config.js` to the same value. |
 
 ## Deploying to Railway
 
-This repo ships a `railway.toml` and `backend/Dockerfile` that build **from the `backend/` directory as the Docker build context** (so `COPY requirements.txt .` etc. resolve correctly). In the Railway dashboard:
+> **See [DEPLOYMENT.md](DEPLOYMENT.md) for the full step-by-step guide.** Short version below.
 
-1. Create a new service from this repo, and set the service's **Root Directory** to `backend/` in Settings → Service. This makes the build context match the Dockerfile.
+This repo ships a single `Dockerfile` **at the repo root** and a matching `railway.toml` that build both `backend/` and `frontend/` into one container — the backend serves the frontend directly, so there's no separate frontend host to configure and no manual "Root Directory" dashboard setting to remember.
+
+1. Connect this repo as a new Railway service — no Root Directory change needed, the root `Dockerfile` is used automatically per `railway.toml`.
 2. Add the `GROQ_API_KEY` and `DATABASE_URL` environment variables (Railway's Postgres plugin can inject `DATABASE_URL` automatically — just make sure it ends up in `postgresql+asyncpg://` form, or let `database.py`'s normalization handle `postgres://`/`postgresql://`).
-3. Set `FRONTEND_ORIGIN` to wherever your frontend is hosted.
-4. Deploy. Railway will use `healthcheckPath = "/health"` from `railway.toml` to verify the deploy.
-5. Run `alembic upgrade head` against the production database (via Railway's shell, or a one-off job) — or rely on the automatic `create_all` bootstrap in `init_db()` for a first deploy.
+3. Deploy. Railway will use `healthcheckPath = "/health"` from `railway.toml` to verify the deploy.
+4. Run `alembic upgrade head` against the production database (via Railway's shell, or a one-off job). Do **not** set `DEV_MODE` in production — see the table above.
 
-**Important production note on the frontend:** because the Docker build context is scoped to `backend/`, the `frontend/` folder is **not** included in the production container image — only the API ships in that image. This is intentional and mirrors the CORS setup already in `main.py` (`FRONTEND_ORIGIN`): deploy `frontend/` separately as a static site (Railway static service, Netlify, Vercel, GitHub Pages, or even the same VM behind a reverse proxy) and point it at your API's URL. Locally, the backend conveniently serves the frontend directly (see above) since both folders sit side by side on disk — that convenience just doesn't carry over into the scoped Docker build.
+If you'd rather host the frontend separately anyway (e.g. a CDN in front of a static export), that's still supported: set `frontend/config.js`'s `window.TAXIGO_API_URL` to the API's URL, and set `FRONTEND_ORIGIN` on the backend to the frontend's origin for CORS.
 
 ## API documentation
 
@@ -119,7 +126,7 @@ All endpoints return JSON. Error responses use structured, bilingual `detail` ob
 | `POST` | `/analytics/export` | Export the schedule as JSON. Body: `{ scope: "today" \| "week" \| "all" }`. |
 | `GET` | `/notifications/recent` | Recent reminder notifications (backfills the bell panel on page load). |
 | `GET` | `/health` | Health check — DB and Groq connectivity. |
-| `GET` | `/` | Serves the frontend (local dev; see deployment note above). |
+| `GET` | `/` | Serves the frontend (both local dev and the bundled production image). |
 
 Interactive Swagger docs are also available at `/docs` (and ReDoc at `/redoc`) whenever the backend is running.
 

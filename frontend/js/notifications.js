@@ -4,6 +4,10 @@
 (function (global) {
   "use strict";
 
+  // Same overrides as app.js -- empty means same-origin / no secret required.
+  const API_BASE = global.TAXIGO_API_URL || "";
+  const API_SECRET = global.TAXIGO_API_SECRET || "";
+
   let socket = null;
   let currentLang = "en";
   let notifications = [];
@@ -17,7 +21,10 @@
   function connectSocket() {
     if (socket || typeof io === "undefined") return;
 
-    socket = io({ transports: ["websocket", "polling"] });
+    // io()'s first arg is the server URL; passing undefined for same-origin
+    // (empty API_BASE) keeps existing behavior, a real URL targets the API
+    // when the frontend is hosted separately.
+    socket = io(API_BASE || undefined, { transports: ["websocket", "polling"] });
 
     socket.on("reminder", (payload) => {
       addNotification(payload);
@@ -87,7 +94,9 @@
 
   async function loadRecentNotifications() {
     try {
-      const res = await fetch("/notifications/recent");
+      const res = await fetch(`${API_BASE}/notifications/recent`, {
+        headers: API_SECRET ? { "X-API-Secret": API_SECRET } : {},
+      });
       if (!res.ok) return;
       const data = await res.json();
       notifications = data.notifications || [];

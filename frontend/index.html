@@ -157,7 +157,7 @@
         </button>
         <textarea id="chat-input" rows="1" data-i18n-placeholder="chatPlaceholder" placeholder="Type a message…"></textarea>
         <button id="send-btn" class="send-btn" data-i18n-title="send" aria-label="Send">
-          <svg class="icon" viewBox="0 0 24 24" style="stroke:#1b1305;"><path d="M4 12l16-7-6 16-2.5-6L4 12z" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          <svg class="icon flip-rtl" viewBox="0 0 24 24" style="stroke:#1b1305;"><path d="M4 12l16-7-6 16-2.5-6L4 12z" stroke-width="1.6" stroke-linejoin="round"/></svg>
         </button>
       </div>
     </section>
@@ -258,20 +258,28 @@
 
 <!-- ============================== Print-only schedule (used by window.print) ============================== -->
 <div id="print-root">
-  <h1>TaxiGo AI — Schedule</h1>
+  <h1 data-i18n="printTitle">TaxiGo AI — Schedule</h1>
   <p id="print-date"></p>
   <table>
     <thead>
-      <tr><th>Client</th><th>Pickup</th><th>Drop-off</th><th>Time</th><th>Fare</th><th>Notes</th></tr>
+      <tr>
+        <th data-i18n="printClient">Client</th>
+        <th data-i18n="printPickup">Pickup</th>
+        <th data-i18n="printDropoff">Drop-off</th>
+        <th data-i18n="printTime">Time</th>
+        <th data-i18n="printFee">Fee</th>
+        <th data-i18n="printNotes">Notes</th>
+      </tr>
     </thead>
     <tbody id="print-table-body"></tbody>
   </table>
 </div>
 
 <!-- ============================== Scripts ============================== -->
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-2huaZvOR9iDzHqslqwpR87isEmrfxqyWOF7hr7BY6KG0+hVKLoEXMPUJw3ynWuhO" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" integrity="sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt" crossorigin="anonymous"></script>
 
+<script src="/config.js"></script>
 <script src="/js/translations.js"></script>
 <script src="/js/voice.js"></script>
 <script src="/js/charts.js"></script>

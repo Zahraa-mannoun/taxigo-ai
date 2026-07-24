@@ -6,6 +6,12 @@
 (function () {
   "use strict";
 
+  // Empty string ('') means same-origin -- the default for local dev and
+  // for the bundled single-service Docker image. Override via config.js
+  // (loaded before this script) for split-domain deployments.
+  const API_BASE = window.TAXIGO_API_URL || "";
+  const API_SECRET = window.TAXIGO_API_SECRET || "";
+
   const {
     t,
     isRtl,
@@ -93,8 +99,10 @@
   }
 
   async function api(path, options) {
-    const res = await fetch(path, {
-      headers: { "Content-Type": "application/json" },
+    const headers = { "Content-Type": "application/json" };
+    if (API_SECRET) headers["X-API-Secret"] = API_SECRET;
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers,
       ...options,
     });
     if (!res.ok) {
@@ -233,12 +241,17 @@
 
     if (state.search.trim()) {
       const q = state.search.trim().toLowerCase();
-      items = items.filter(
-        (b) =>
+      items = items.filter((b) => {
+        const pickupTranslated = translateLocation(b.pickup, state.lang).toLowerCase();
+        const dropoffTranslated = translateLocation(b.dropoff, state.lang).toLowerCase();
+        return (
           b.client_name.toLowerCase().includes(q) ||
           b.pickup.toLowerCase().includes(q) ||
-          b.dropoff.toLowerCase().includes(q)
-      );
+          b.dropoff.toLowerCase().includes(q) ||
+          pickupTranslated.includes(q) ||
+          dropoffTranslated.includes(q)
+        );
+      });
     }
 
     items.sort((a, b) => (a.trip_date + a.trip_time).localeCompare(b.trip_date + b.trip_time));
@@ -606,9 +619,9 @@
       document.getElementById("client-history-earned").textContent = formatMoney(earned);
       document.getElementById("client-history-projected").textContent = formatMoney(projected);
       document.getElementById("client-history-trips").textContent = String(data.total_trips);
-      document.getElementById("client-history-list").innerHTML = data.trips
-        .map((b) => buildBookingCard(b, { showActions: false }))
-        .join("");
+      document.getElementById("client-history-list").innerHTML = data.trips.length
+        ? data.trips.map((b) => buildBookingCard(b, { showActions: false })).join("")
+        : `<div class="empty-state">${t("noBookings", state.lang)}</div>`;
     } catch (err) {
       document.getElementById("client-history-list").innerHTML = `<div class="empty-state">${t("loadError", state.lang)}</div>`;
     }
@@ -666,7 +679,11 @@
     document.querySelectorAll(".tab-pane").forEach((pane) => {
       pane.classList.toggle("active", pane.id === `tab-${tabName}`);
     });
-    if (tabName === "summary") renderWeeklyChartNow();
+    if (tabName === "summary") {
+      renderWeeklyChartNow();
+    } else {
+      window.TaxiGoCharts.destroyChart();
+    }
   }
 
   function setMobilePane(pane) {

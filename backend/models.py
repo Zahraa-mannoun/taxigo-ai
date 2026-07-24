@@ -96,7 +96,7 @@ class BookingOut(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(..., min_length=1, max_length=2000)
     conversation_history: list[dict] = Field(default_factory=list)
     lang: Language = "en"
 

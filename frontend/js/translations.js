@@ -30,7 +30,6 @@
       suggestion3: "How much did I earn today?",
       suggestion4: "Mark Sara's trip as completed",
 
-      bookingsTitle: "Bookings",
       searchPlaceholder: "Search by client, pickup or drop-off…",
       filterAll: "All",
       filterToday: "Today",
@@ -55,22 +54,27 @@
       statusCompleted: "Completed",
       statusCancelled: "Cancelled",
 
-      historyTitle: "Trip History",
       totalEarned: "Total earned",
       totalTrips: "Total trips",
 
-      summaryTitle: "Summary",
       earnedLabel: "Earned",
       projectedLabel: "Projected",
       weeklyChartTitle: "Last 7 Days",
       exportPdfButton: "Export today's schedule (PDF)",
+
+      printTitle: "TaxiGo AI — Schedule",
+      printClient: "Client",
+      printPickup: "Pickup",
+      printDropoff: "Drop-off",
+      printTime: "Time",
+      printFee: "Fee",
+      printNotes: "Notes",
 
       clientHistoryTitle: "Client History",
       close: "Close",
 
       notificationsTitle: "Notifications",
       noNotifications: "No notifications yet.",
-      minutesAway: "in {minutes} min",
 
       onboardingStep1Title: "Welcome to TaxiGo AI",
       onboardingStep1Body: "Your AI dispatcher. Chat naturally in English, Arabic or French to add trips, update your schedule, and track earnings — no forms to fill.",
@@ -86,7 +90,6 @@
 
       themeToggleToDark: "Switch to dark mode",
       themeToggleToLight: "Switch to light mode",
-      languageToggle: "Language",
       menu: "Menu",
 
       conflictTitle: "Scheduling conflict",
@@ -130,7 +133,6 @@
       suggestion3: "قديش ربحت اليوم؟",
       suggestion4: "خلصت رحلة سارة",
 
-      bookingsTitle: "الحجوزات",
       searchPlaceholder: "دوّر باسم الزبون أو مكان الانطلاق أو الوصول…",
       filterAll: "الكل",
       filterToday: "اليوم",
@@ -155,22 +157,27 @@
       statusCompleted: "مكتملة",
       statusCancelled: "ملغية",
 
-      historyTitle: "سجل الرحلات",
       totalEarned: "المجموع المكتسب",
       totalTrips: "عدد الرحلات",
 
-      summaryTitle: "الملخص",
       earnedLabel: "المكتسب",
       projectedLabel: "المتوقع",
       weeklyChartTitle: "آخر 7 أيام",
       exportPdfButton: "تصدير جدول اليوم (PDF)",
+
+      printTitle: "TaxiGo AI — الجدول",
+      printClient: "الزبون",
+      printPickup: "الانطلاق",
+      printDropoff: "الوصول",
+      printTime: "الوقت",
+      printFee: "الأجرة",
+      printNotes: "ملاحظات",
 
       clientHistoryTitle: "سجل الزبون",
       close: "إغلاق",
 
       notificationsTitle: "الإشعارات",
       noNotifications: "ما في إشعارات لهلق.",
-      minutesAway: "بعد {minutes} دقيقة",
 
       onboardingStep1Title: "أهلاً فيك بـ TaxiGo AI",
       onboardingStep1Body: "مساعدك الذكي لتنظيم الرحلات. احكي معه عادي بالعربي أو الإنكليزي أو الفرنسي لتضيف رحلات وتحدّث جدولك وتتابع أرباحك — بلا فورمات.",
@@ -186,7 +193,6 @@
 
       themeToggleToDark: "بدّل للوضع الداكن",
       themeToggleToLight: "بدّل للوضع الفاتح",
-      languageToggle: "اللغة",
       menu: "القائمة",
 
       conflictTitle: "تعارض بالمواعيد",
@@ -230,7 +236,6 @@
       suggestion3: "Combien ai-je gagné aujourd'hui ?",
       suggestion4: "Marque le trajet de Sara comme terminé",
 
-      bookingsTitle: "Réservations",
       searchPlaceholder: "Rechercher par client, prise en charge ou destination…",
       filterAll: "Tous",
       filterToday: "Aujourd'hui",
@@ -255,22 +260,27 @@
       statusCompleted: "Terminé",
       statusCancelled: "Annulé",
 
-      historyTitle: "Historique des trajets",
       totalEarned: "Total gagné",
       totalTrips: "Total des trajets",
 
-      summaryTitle: "Résumé",
       earnedLabel: "Gagné",
       projectedLabel: "Prévu",
       weeklyChartTitle: "7 derniers jours",
       exportPdfButton: "Exporter le programme du jour (PDF)",
+
+      printTitle: "TaxiGo AI — Planning",
+      printClient: "Client",
+      printPickup: "Départ",
+      printDropoff: "Arrivée",
+      printTime: "Heure",
+      printFee: "Tarif",
+      printNotes: "Notes",
 
       clientHistoryTitle: "Historique du client",
       close: "Fermer",
 
       notificationsTitle: "Notifications",
       noNotifications: "Aucune notification pour le moment.",
-      minutesAway: "dans {minutes} min",
 
       onboardingStep1Title: "Bienvenue sur TaxiGo AI",
       onboardingStep1Body: "Votre répartiteur IA. Discutez naturellement en anglais, arabe ou français pour ajouter des trajets, mettre à jour votre programme et suivre vos gains — sans aucun formulaire.",
@@ -286,7 +296,6 @@
 
       themeToggleToDark: "Passer en mode sombre",
       themeToggleToLight: "Passer en mode clair",
-      languageToggle: "Langue",
       menu: "Menu",
 
       conflictTitle: "Conflit d'horaire",

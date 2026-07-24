@@ -15,6 +15,7 @@ const CURRENT_CACHES = [CACHE_NAME, API_CACHE_NAME];
 
 const APP_SHELL = [
   "/",
+  "/config.js",
   "/css/styles.css",
   "/js/translations.js",
   "/js/voice.js",

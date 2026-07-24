@@ -73,12 +73,19 @@ async def db_session():
 
 
 async def init_db() -> None:
-    """Create tables if they do not already exist (idempotent bootstrap).
+    """Create tables if they do not already exist -- DEV_MODE only.
 
-    Production deployments should also run `alembic upgrade head` for
-    proper migration tracking; this call is a safety net so the app
-    works out of the box on a fresh database.
+    `create_all()` only ever creates missing TABLES; it never ALTERs an
+    existing one. If it ran in production, a column added to models.py
+    without a matching Alembic migration would silently appear on a fresh
+    database but not on an already-provisioned one, masking schema drift.
+    Alembic (`alembic upgrade head`) is the only source of truth in
+    production; set DEV_MODE=1 to get the old auto-create convenience for
+    local development against a throwaway database.
     """
+    if os.getenv("DEV_MODE", "").lower() not in ("1", "true", "yes"):
+        return
+
     from models import Booking  # noqa: F401  (ensures model is registered on Base)
 
     async with engine.begin() as conn:

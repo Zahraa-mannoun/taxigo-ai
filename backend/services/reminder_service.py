@@ -9,6 +9,11 @@ flag flips to True immediately after firing).
 Also keeps a small in-memory ring buffer of recently fired reminders so
 the frontend notification bell can populate itself on page load, since
 Socket.IO only delivers events to clients connected at the moment they fire.
+
+NOTE: `recent_notifications` lives only in this process's memory -- it
+resets on every restart/redeploy and is NOT shared across instances. That's
+fine for the current single-instance deployment target; if this is ever
+scaled horizontally, this needs to move to a shared store (DB table, Redis).
 """
 from __future__ import annotations
 
@@ -21,6 +26,7 @@ from sqlalchemy import select
 
 from database import db_session
 from models import Booking
+from timezone_utils import now_beirut
 
 POLL_INTERVAL_SECONDS = 60
 REMINDER_WINDOW_MIN = 28
@@ -42,7 +48,7 @@ async def _reminder_loop(sio) -> None:
 
 
 async def _check_reminders(sio) -> None:
-    now = dt.datetime.now()
+    now = now_beirut()
     async with db_session() as db:
         stmt = select(Booking).where(
             Booking.status.in_(["confirmed", "in_progress"]),
@@ -75,7 +81,11 @@ async def _check_reminders(sio) -> None:
                         f"تذكير: رحلة {booking.client_name} (من {booking.pickup} إلى "
                         f"{booking.dropoff}) بعد حوالي {round(minutes_until)} دقيقة."
                     ),
-                    "fired_at": dt.datetime.utcnow().isoformat(),
+                    "message_fr": (
+                        f"Rappel : le trajet de {booking.client_name} ({booking.pickup} -> "
+                        f"{booking.dropoff}) est dans environ {round(minutes_until)} minutes."
+                    ),
+                    "fired_at": dt.datetime.now(dt.timezone.utc).isoformat(),
                 }
                 recent_notifications.appendleft(payload)
 

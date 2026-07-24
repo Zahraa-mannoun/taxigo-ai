@@ -16,17 +16,143 @@ import datetime as dt
 import json
 import logging
 import os
+import re
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
 from groq import AsyncGroq, BadRequestError
-
-logger = logging.getLogger("taxigo.ai_agent")
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import Booking, BookingOut, FRIENDLY_FIELD_NAMES
 from services.conflict_detector import CONFLICT_WINDOW_MINUTES, find_conflict
+from timezone_utils import now_beirut, today_beirut
+
+logger = logging.getLogger("taxigo.ai_agent")
+
+# --------------------------------------------------------------------------
+# Location normalization (Fix 7 safety net)
+#
+# The system prompt instructs the model to always extract pickup/dropoff in
+# English, but this is a plain instruction-following task (not tool
+# selection), and testing showed llama-3.3-70b-versatile does not reliably
+# obey it -- it will happily store "بيروت" verbatim when the driver typed
+# Arabic. Rather than depend on prompt compliance alone, canonicalize
+# whatever the model extracts against the same Lebanese place-name
+# dictionary the frontend uses (mirrored here), so the stored value is
+# deterministically English regardless of what the model actually returned.
+# --------------------------------------------------------------------------
+LOCATION_EN_CANONICAL: dict[str, str] = {
+    "beirut": "Beirut", "tripoli": "Tripoli", "saida": "Saida", "sidon": "Saida",
+    "tyre": "Tyre", "sour": "Tyre", "jounieh": "Jounieh", "zahle": "Zahle",
+    "baalbek": "Baalbek", "nabatieh": "Nabatieh", "aley": "Aley", "byblos": "Byblos",
+    "jbeil": "Byblos", "batroun": "Batroun", "chouf": "Chouf", "metn": "Metn",
+    "kesrouan": "Kesrouan", "akkar": "Akkar", "hamra": "Hamra", "downtown": "Downtown",
+    "verdun": "Verdun", "achrafieh": "Achrafieh", "ashrafieh": "Achrafieh",
+    "mar mikhael": "Mar Mikhael", "gemmayzeh": "Gemmayzeh", "raouche": "Raouche",
+    "corniche": "Corniche", "sodeco": "Sodeco", "badaro": "Badaro", "sanayeh": "Sanayeh",
+    "ras beirut": "Ras Beirut", "dekwaneh": "Dekwaneh", "sin el fil": "Sin El Fil",
+    "bourj hammoud": "Bourj Hammoud", "jdeideh": "Jdeideh", "cola": "Cola",
+    "tayouneh": "Tayouneh", "chiyah": "Chiyah", "ghobeiry": "Ghobeiry",
+    "haret hreik": "Haret Hreik", "dahiyeh": "Dahiyeh", "airport": "Airport",
+    "rafic hariri airport": "Rafic Hariri Airport", "port": "Port",
+    "port of beirut": "Port of Beirut", "hospital": "Hospital", "aub": "AUB",
+    "lau": "LAU", "usj": "USJ", "lebanese university": "Lebanese University",
+    "mall": "Mall", "city centre": "City Centre", "dbayeh": "Dbayeh",
+    "antelias": "Antelias", "zalka": "Zalka", "naccache": "Naccache", "annar": "Annar",
+}
+
+_LOCATIONS_FOREIGN: dict[str, dict[str, str]] = {
+    "beirut": {"ar": "بيروت", "fr": "Beyrouth"},
+    "tripoli": {"ar": "طرابلس", "fr": "Tripoli"},
+    "saida": {"ar": "صيدا", "fr": "Saïda"},
+    "sidon": {"ar": "صيدا", "fr": "Saïda"},
+    "tyre": {"ar": "صور", "fr": "Tyr"},
+    "sour": {"ar": "صور", "fr": "Tyr"},
+    "jounieh": {"ar": "جونيه", "fr": "Jounieh"},
+    "zahle": {"ar": "زحلة", "fr": "Zahlé"},
+    "baalbek": {"ar": "بعلبك", "fr": "Baalbek"},
+    "nabatieh": {"ar": "النبطية", "fr": "Nabatieh"},
+    "aley": {"ar": "عاليه", "fr": "Aley"},
+    "byblos": {"ar": "جبيل", "fr": "Byblos"},
+    "jbeil": {"ar": "جبيل", "fr": "Byblos"},
+    "batroun": {"ar": "البترون", "fr": "Batroun"},
+    "chouf": {"ar": "الشوف", "fr": "Chouf"},
+    "metn": {"ar": "المتن", "fr": "Metn"},
+    "kesrouan": {"ar": "كسروان", "fr": "Kesrouan"},
+    "akkar": {"ar": "عكار", "fr": "Akkar"},
+    "hamra": {"ar": "الحمرا", "fr": "Hamra"},
+    "downtown": {"ar": "وسط بيروت", "fr": "Centre-ville"},
+    "verdun": {"ar": "فردان", "fr": "Verdun"},
+    "achrafieh": {"ar": "الأشرفية", "fr": "Achrafieh"},
+    "ashrafieh": {"ar": "الأشرفية", "fr": "Achrafieh"},
+    "mar mikhael": {"ar": "مار مخايل", "fr": "Mar Mikhael"},
+    "gemmayzeh": {"ar": "الجميزة", "fr": "Gemmayzeh"},
+    "raouche": {"ar": "الروشة", "fr": "Raouché"},
+    "corniche": {"ar": "الكورنيش", "fr": "Corniche"},
+    "sodeco": {"ar": "سوديكو", "fr": "Sodeco"},
+    "badaro": {"ar": "بدارو", "fr": "Badaro"},
+    "sanayeh": {"ar": "الصنايع", "fr": "Sanayeh"},
+    "ras beirut": {"ar": "رأس بيروت", "fr": "Ras Beyrouth"},
+    "dekwaneh": {"ar": "الدكوانة", "fr": "Dekwaneh"},
+    "sin el fil": {"ar": "سن الفيل", "fr": "Sin el Fil"},
+    "bourj hammoud": {"ar": "برج حمود", "fr": "Bourj Hammoud"},
+    "jdeideh": {"ar": "الجديدة", "fr": "Jdeideh"},
+    "cola": {"ar": "كولا", "fr": "Cola"},
+    "tayouneh": {"ar": "الطيونة", "fr": "Tayouneh"},
+    "chiyah": {"ar": "الشياح", "fr": "Chiyah"},
+    "ghobeiry": {"ar": "الغبيري", "fr": "Ghobeiry"},
+    "haret hreik": {"ar": "حارة حريك", "fr": "Haret Hreik"},
+    "dahiyeh": {"ar": "الضاحية", "fr": "Dahiyeh"},
+    "airport": {"ar": "المطار", "fr": "Aéroport"},
+    "rafic hariri airport": {"ar": "مطار رفيق الحريري", "fr": "Aéroport Rafic Hariri"},
+    "port": {"ar": "المرفأ", "fr": "Port"},
+    "port of beirut": {"ar": "مرفأ بيروت", "fr": "Port de Beyrouth"},
+    "hospital": {"ar": "المستشفى", "fr": "Hôpital"},
+    "aub": {"ar": "الجامعة الأمريكية", "fr": "AUB"},
+    "lau": {"ar": "الجامعة اللبنانية الأمريكية", "fr": "LAU"},
+    "usj": {"ar": "جامعة القديس يوسف", "fr": "USJ"},
+    "lebanese university": {"ar": "الجامعة اللبنانية", "fr": "Université Libanaise"},
+    "mall": {"ar": "المول", "fr": "Centre commercial"},
+    "city centre": {"ar": "سيتي سنتر", "fr": "City Centre"},
+    "dbayeh": {"ar": "ضبيه", "fr": "Dbayeh"},
+    "antelias": {"ar": "أنطلياس", "fr": "Antelias"},
+    "zalka": {"ar": "الزلقا", "fr": "Zalka"},
+    "naccache": {"ar": "النقاش", "fr": "Naccache"},
+    "annar": {"ar": "النار", "fr": "Annar"},
+}
+
+_FOREIGN_TO_KEY: dict[str, str] = {}
+for _key, _translations in _LOCATIONS_FOREIGN.items():
+    for _foreign_name in _translations.values():
+        _FOREIGN_TO_KEY.setdefault(_foreign_name.lower(), _key)
+
+_ARABIC_SCRIPT_RE = re.compile(r"[؀-ۿ]")
+
+
+def normalize_location(text: Optional[str]) -> Optional[str]:
+    """Best-effort canonicalization of a pickup/dropoff string to English.
+    English input (or anything not in the dictionary) passes through
+    unchanged -- this only rewrites recognized Arabic/French place names.
+
+    Many French entries are spelled identically to their English key (e.g.
+    "port" -> fr "Port", "hamra" -> fr "Hamra"). The substring fallback below
+    is only meant to catch an Arabic place name embedded in a longer string
+    the model returned -- it must NOT run on plain Latin/English text, or it
+    would wrongly match "port" inside "Port of Beirut" (already-correct
+    English) and mangle it down to just "Port".
+    """
+    if not text:
+        return text
+    lower = text.strip().lower()
+    key = _FOREIGN_TO_KEY.get(lower)
+    if key:
+        return LOCATION_EN_CANONICAL[key]
+    if _ARABIC_SCRIPT_RE.search(text):
+        for foreign_name, matched_key in _FOREIGN_TO_KEY.items():
+            if re.search(rf"\b{re.escape(foreign_name)}\b", lower):
+                return LOCATION_EN_CANONICAL[matched_key]
+    return text
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
@@ -44,8 +170,23 @@ def get_client() -> AsyncGroq:
     return _client
 
 
+_AI_HEALTH_CACHE_SECONDS = 300
+_ai_health_cache: dict[str, Any] = {"result": None, "checked_at": None}
+
+
 async def check_ai_connectivity() -> bool:
-    """Lightweight check used by /health -- confirms the API key works."""
+    """Lightweight check used by /health -- confirms the API key works.
+
+    Cached for 5 minutes: this makes a REAL Groq API call, and /health may be
+    polled frequently by uptime monitors / Railway's own healthcheck. Without
+    caching, health checks alone can burn through the free-tier daily quota
+    (this happened repeatedly during development).
+    """
+    now = now_beirut()
+    cached_at = _ai_health_cache["checked_at"]
+    if cached_at is not None and (now - cached_at).total_seconds() < _AI_HEALTH_CACHE_SECONDS:
+        return _ai_health_cache["result"]
+
     try:
         client = get_client()
         await client.chat.completions.create(
@@ -53,9 +194,13 @@ async def check_ai_connectivity() -> bool:
             messages=[{"role": "user", "content": "ping"}],
             max_tokens=1,
         )
-        return True
+        result = True
     except Exception:
-        return False
+        result = False
+
+    _ai_health_cache["result"] = result
+    _ai_health_cache["checked_at"] = now
+    return result
 
 
 # --------------------------------------------------------------------------
@@ -194,7 +339,7 @@ TOOLS: list[dict[str, Any]] = [
 # System prompt
 # --------------------------------------------------------------------------
 def build_system_prompt(lang: str) -> str:
-    today = dt.date.today()
+    today = today_beirut()
     tomorrow = today + dt.timedelta(days=1)
     weekday = today.strftime("%A")
 
@@ -211,27 +356,34 @@ the driver what today's date is.
 1. extract_booking -- add a brand new trip.
    Lebanese trigger words/phrases: "بدي احجز", "احجزلي", "زبون جديد", "ضيفلي حجز",
    "في عندي طلعة", "بدي زبط رحلة لـ", "عندي كليان جديد", "خدني احجز" and Arabizi like
-   "biddi ehjez", "3andi trip jdid", "zbotli booking".
+   "biddi ehjez", "3andi trip jdid", "zbotli booking". French: "réserver", "ajouter",
+   "nouveau trajet", "prendre", "conduire" (combined with "demain"/"aujourd'hui").
 2. update_booking -- change details of an existing trip (pickup/dropoff/date/time/fare/notes).
    Triggers: "بدل الموعد", "غيرلي الوقت", "عدلّي الحجز", "بدي بدل مكان التحميل",
-   "بدلّي الأجرة", "ghayerli el waet", "3adelli el booking".
+   "بدلّي الأجرة", "ghayerli el waet", "3adelli el booking". French: "modifier",
+   "changer", "mettre à jour", "corriger".
 3. cancel_booking -- cancel a trip entirely.
    Triggers: "الغي الحجز", "بطل الرحلة", "ما عاد في داعي للحجز", "cancel el trip",
-   "شطبلي الرحلة".
+   "شطبلي الرحلة". French: "annuler", "supprimer", "effacer".
 4. update_status -- mark a trip in_progress/completed (never used for cancelling).
    Triggers: "الزبون طلع", "عم روح عالزبون", "وصلت", "خلصت الرحلة", "خلص التوصيلة",
-   "sar b tari2", "khalasit el trip", "picked up the client".
+   "sar b tari2", "khalasit el trip", "picked up the client". French: "commencé",
+   "démarré", "terminé", "livré", "en route".
 5. repeat_booking -- clone the client's last trip onto a new date.
    Triggers: "نفس الرحلة يلي فاتت", "كرر الحجز", "زي المرة اللي فاتت بس بكرا",
-   "same trip as last time", "rep33tili nafs el booking".
+   "same trip as last time", "rep33tili nafs el booking". French: "répéter",
+   "même trajet", "encore", "de nouveau".
 6. list_bookings -- show the schedule.
    Triggers: "شو في اليوم", "وريني الحجوزات", "شو عندي رحلات بكرا", "shu 3andi l youm",
-   "warrini el schedule".
+   "warrini el schedule". French: "voir", "afficher", "planning", "horaire",
+   "mes réservations".
 7. get_summary -- daily/weekly earnings summary.
    Triggers: "قديش ربحت اليوم", "كم كسبت", "ملخص اليوم", "addeh rbe7et",
-   "how much did I make".
-8. chat -- anything else (greetings, small talk, questions). Do NOT call a tool;
-   just reply naturally in your message content.
+   "how much did I make". French: "résumé", "combien", "gains", "aujourd'hui",
+   "bilan".
+8. chat -- anything else (greetings, small talk, questions, in any of the three
+   languages including French). Do NOT call a tool; just reply naturally in your
+   message content.
 
 ## Synonyms you must understand
 - "fee", "fare", "fees", "أجرة", "التسعيرة", "السعر", "cost" all refer to the `fare` field.
@@ -338,17 +490,21 @@ TEMPLATES: dict[str, dict[str, str]] = {
         "fr": "Vous avez {count} trajet(s) programmé(s).",
     },
     "summary_result": {
-        "en": "{period}: earned ${earned} from completed trips, projected ${projected} across {count} trip(s).",
-        "ar": "{period}: ربحت ${earned} من الرحلات المكتملة، والمتوقع ${projected} من أصل {count} رحلة.",
-        "fr": "{period} : {earned} $ gagnés sur les trajets terminés, {projected} $ prévus sur {count} trajet(s).",
+        "en": "{period}: earned {earned} from completed trips, projected {projected} across {count} trip(s).",
+        "ar": "{period}: ربحت {earned} من الرحلات المكتملة، والمتوقع {projected} من أصل {count} رحلة.",
+        "fr": "{period} : {earned} gagnés sur les trajets terminés, {projected} prévus sur {count} trajet(s).",
     },
 }
 
+# Must match frontend/js/translations.js's statusInProgress/statusCancelled
+# exactly -- these words appear in both chat replies and UI badges, and
+# previously drifted out of sync (ar "قيد التنفيذ"/"ملغاة" vs frontend's
+# "جارية"/"ملغية").
 STATUS_LABELS = {
     "confirmed": {"en": "confirmed", "ar": "مؤكدة", "fr": "confirmé"},
-    "in_progress": {"en": "in progress", "ar": "قيد التنفيذ", "fr": "en cours"},
+    "in_progress": {"en": "in progress", "ar": "جارية", "fr": "en cours"},
     "completed": {"en": "completed", "ar": "مكتملة", "fr": "terminé"},
-    "cancelled": {"en": "cancelled", "ar": "ملغاة", "fr": "annulé"},
+    "cancelled": {"en": "cancelled", "ar": "ملغية", "fr": "annulé"},
 }
 
 PERIOD_LABELS = {
@@ -367,6 +523,42 @@ def t(key: str, lang: str, **kwargs: Any) -> str:
 
 def format_time_12h(value: dt.time) -> str:
     return value.strftime("%I:%M %p").lstrip("0")
+
+
+# Mirrors frontend/js/translations.js's formatDate/formatTime/formatMoney so
+# chat replies read naturally in AR/FR instead of embedding a raw ISO date
+# and English AM/PM inside an otherwise-Arabic/French sentence. EN output is
+# unchanged from before (still ISO date + format_time_12h).
+_AR_MONTHS = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"]
+_FR_MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+_AR_PERIOD = {"AM": "ص", "PM": "م"}
+
+
+def format_date_localized(value: dt.date, lang: str) -> str:
+    if lang == "ar":
+        return f"{value.day} {_AR_MONTHS[value.month - 1]} {value.year}"
+    if lang == "fr":
+        return f"{value.day} {_FR_MONTHS[value.month - 1]} {value.year}"
+    return value.isoformat()  # en: unchanged
+
+
+def format_time_localized(value: dt.time, lang: str) -> str:
+    if lang == "fr":
+        return value.strftime("%H:%M")
+    if lang == "ar":
+        period = _AR_PERIOD["PM"] if value.hour >= 12 else _AR_PERIOD["AM"]
+        hour12 = value.hour % 12 or 12
+        return f"{hour12}:{value.minute:02d} {period}"
+    return format_time_12h(value)  # en: unchanged
+
+
+def format_money_localized(value: Decimal, lang: str) -> str:
+    fixed = f"{value:.2f}"
+    if lang == "fr":
+        return f"{fixed.replace('.', ',')} $"
+    if lang == "ar":
+        return f"{fixed}$"
+    return f"${fixed}"  # en: unchanged
 
 
 def missing_fields_message(missing: list[str], lang: str) -> str:
@@ -403,11 +595,17 @@ def _parse_fare(value: Any) -> Decimal:
         return Decimal("0")
 
 
+def _escape_like(value: str) -> str:
+    """Escape SQL LIKE/ILIKE wildcards so a literal '%' or '_' in user input
+    (e.g. a client name) can't be misinterpreted as a pattern wildcard."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 async def _find_client_booking(
     db: AsyncSession, client_name: str, trip_date: Optional[dt.date] = None
 ) -> Optional[Booking]:
     stmt = select(Booking).where(
-        Booking.client_name.ilike(client_name.strip()),
+        Booking.client_name.ilike(_escape_like(client_name.strip()), escape="\\"),
         Booking.status != "cancelled",
     )
     if trip_date is not None:
@@ -432,6 +630,11 @@ async def _handle_extract_booking(db: AsyncSession, sio, args: dict, lang: str) 
     if missing:
         return {"reply": missing_fields_message(missing, lang), "action": "missing_info"}
 
+    # Canonicalize to English regardless of what the model actually returned
+    # (see normalize_location() docstring -- prompt compliance alone isn't reliable here).
+    args["pickup"] = normalize_location(args["pickup"])
+    args["dropoff"] = normalize_location(args["dropoff"])
+
     trip_date = _parse_date(args.get("trip_date"))
     trip_time = _parse_time(args.get("trip_time"))
     if trip_date is None or trip_time is None:
@@ -452,8 +655,8 @@ async def _handle_extract_booking(db: AsyncSession, sio, args: dict, lang: str) 
             "conflict_warning",
             lang,
             other_client=conflict.client_name,
-            other_time=format_time_12h(conflict.trip_time),
-            date=trip_date.isoformat(),
+            other_time=format_time_localized(conflict.trip_time, lang),
+            date=format_date_localized(trip_date, lang),
             window=CONFLICT_WINDOW_MINUTES,
         )
         return {
@@ -488,8 +691,8 @@ async def _handle_extract_booking(db: AsyncSession, sio, args: dict, lang: str) 
         client_name=booking.client_name,
         pickup=booking.pickup,
         dropoff=booking.dropoff,
-        date=booking.trip_date.isoformat(),
-        time=format_time_12h(booking.trip_time),
+        date=format_date_localized(booking.trip_date, lang),
+        time=format_time_localized(booking.trip_time, lang),
     )
     return {"reply": reply, "action": "booking_created", "booking": booking_out, "refresh": True}
 
@@ -507,15 +710,16 @@ async def _handle_update_booking(db: AsyncSession, sio, args: dict, lang: str) -
     new_date = _parse_date(args.get("trip_date")) or booking.trip_date
     new_time = _parse_time(args.get("trip_time")) or booking.trip_time
 
-    if (new_date, new_time) != (booking.trip_date, booking.trip_time):
+    reschedule = (new_date, new_time) != (booking.trip_date, booking.trip_time)
+    if reschedule:
         conflict = await find_conflict(db, new_date, new_time, exclude_booking_id=booking.id)
         if conflict is not None:
             reply = t(
                 "conflict_warning",
                 lang,
                 other_client=conflict.client_name,
-                other_time=format_time_12h(conflict.trip_time),
-                date=new_date.isoformat(),
+                other_time=format_time_localized(conflict.trip_time, lang),
+                date=format_date_localized(new_date, lang),
                 window=CONFLICT_WINDOW_MINUTES,
             )
             return {
@@ -526,10 +730,14 @@ async def _handle_update_booking(db: AsyncSession, sio, args: dict, lang: str) -
                 },
             }
 
-    booking.pickup = args.get("pickup") or booking.pickup
-    booking.dropoff = args.get("dropoff") or booking.dropoff
+    booking.pickup = normalize_location(args.get("pickup")) or booking.pickup
+    booking.dropoff = normalize_location(args.get("dropoff")) or booking.dropoff
     booking.trip_date = new_date
     booking.trip_time = new_time
+    if reschedule:
+        # A trip that already had its reminder fire must be eligible again
+        # for the new time -- otherwise it silently never reminds at all.
+        booking.reminded = False
     if args.get("fare") is not None:
         booking.fare = _parse_fare(args.get("fare"))
     if args.get("notes") is not None:
@@ -547,8 +755,8 @@ async def _handle_update_booking(db: AsyncSession, sio, args: dict, lang: str) -
         client_name=booking.client_name,
         pickup=booking.pickup,
         dropoff=booking.dropoff,
-        date=booking.trip_date.isoformat(),
-        time=format_time_12h(booking.trip_time),
+        date=format_date_localized(booking.trip_date, lang),
+        time=format_time_localized(booking.trip_time, lang),
     )
     return {"reply": reply, "action": "booking_updated", "booking": booking_out, "refresh": True}
 
@@ -574,8 +782,8 @@ async def _handle_cancel_booking(db: AsyncSession, sio, args: dict, lang: str) -
         "booking_cancelled",
         lang,
         client_name=booking.client_name,
-        date=booking.trip_date.isoformat(),
-        time=format_time_12h(booking.trip_time),
+        date=format_date_localized(booking.trip_date, lang),
+        time=format_time_localized(booking.trip_time, lang),
     )
     return {"reply": reply, "action": "booking_cancelled", "booking": booking_out, "refresh": True}
 
@@ -641,8 +849,8 @@ async def _handle_repeat_booking(db: AsyncSession, sio, args: dict, lang: str) -
             "conflict_warning",
             lang,
             other_client=conflict.client_name,
-            other_time=format_time_12h(conflict.trip_time),
-            date=new_date.isoformat(),
+            other_time=format_time_localized(conflict.trip_time, lang),
+            date=format_date_localized(new_date, lang),
             window=CONFLICT_WINDOW_MINUTES,
         )
         return {
@@ -677,14 +885,14 @@ async def _handle_repeat_booking(db: AsyncSession, sio, args: dict, lang: str) -
         client_name=new_booking.client_name,
         pickup=new_booking.pickup,
         dropoff=new_booking.dropoff,
-        date=new_booking.trip_date.isoformat(),
-        time=format_time_12h(new_booking.trip_time),
+        date=format_date_localized(new_booking.trip_date, lang),
+        time=format_time_localized(new_booking.trip_time, lang),
     )
     return {"reply": reply, "action": "booking_created", "booking": booking_out, "refresh": True}
 
 
 async def _handle_list_bookings(db: AsyncSession, sio, args: dict, lang: str) -> dict:
-    today = dt.date.today()
+    today = today_beirut()
     date_filter = args.get("filter", "all")
 
     stmt = select(Booking).where(Booking.status.in_(["confirmed", "in_progress"]))
@@ -696,7 +904,7 @@ async def _handle_list_bookings(db: AsyncSession, sio, args: dict, lang: str) ->
         stmt = stmt.where(Booking.trip_date.between(today, today + dt.timedelta(days=6)))
 
     if args.get("client_name"):
-        stmt = stmt.where(Booking.client_name.ilike(f"%{args['client_name']}%"))
+        stmt = stmt.where(Booking.client_name.ilike(f"%{_escape_like(args['client_name'])}%", escape="\\"))
 
     stmt = stmt.order_by(Booking.trip_date, Booking.trip_time)
     result = await db.execute(stmt)
@@ -708,7 +916,7 @@ async def _handle_list_bookings(db: AsyncSession, sio, args: dict, lang: str) ->
 
 
 async def _handle_get_summary(db: AsyncSession, sio, args: dict, lang: str) -> dict:
-    today = dt.date.today()
+    today = today_beirut()
     period = args.get("period", "today")
 
     stmt = select(Booking).where(Booking.status != "cancelled")
@@ -733,8 +941,8 @@ async def _handle_get_summary(db: AsyncSession, sio, args: dict, lang: str) -> d
         "summary_result",
         lang,
         period=PERIOD_LABELS.get(period, {}).get(lang, period),
-        earned=earned,
-        projected=projected,
+        earned=format_money_localized(earned, lang),
+        projected=format_money_localized(projected, lang),
         count=len(bookings),
     )
     return {"reply": reply, "action": "get_summary", "summary": summary, "refresh": False}

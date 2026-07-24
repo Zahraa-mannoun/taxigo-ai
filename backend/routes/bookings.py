@@ -26,11 +26,28 @@ NOT_FOUND_DETAIL = {
     "fr": "Cette réservation est introuvable.",
 }
 
-INVALID_STATUS_DETAIL = {
-    "en": "That status is not valid.",
-    "ar": "هاي الحالة مش صحيحة.",
-    "fr": "Ce statut n'est pas valide.",
+# Note: a raw invalid *status value* (e.g. "banana") never reaches our code --
+# StatusUpdate.status is a Pydantic Literal, so FastAPI rejects it with its
+# own 422 before this module runs. What we validate here is invalid
+# *transitions* between otherwise-valid statuses (e.g. completed -> confirmed).
+INVALID_TRANSITION_DETAIL = {
+    "en": "That status change isn't allowed.",
+    "ar": "ما فيك تعمل هيدا التغيير بالحالة.",
+    "fr": "Ce changement de statut n'est pas autorisé.",
 }
+
+ALLOWED_TRANSITIONS = {
+    "confirmed": ["in_progress", "cancelled"],
+    "in_progress": ["completed", "cancelled"],
+    "completed": [],  # terminal state
+    "cancelled": [],  # terminal state
+}
+
+
+def _escape_like(value: str) -> str:
+    """Escape SQL LIKE/ILIKE wildcards so a literal '%' or '_' in a client
+    name can't be misinterpreted as a pattern wildcard."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 async def _get_booking_or_404(db: AsyncSession, booking_id: int) -> Booking:
@@ -83,6 +100,11 @@ async def update_booking_status(
     db: AsyncSession = Depends(get_db),
 ):
     booking = await _get_booking_or_404(db, booking_id)
+
+    allowed = ALLOWED_TRANSITIONS.get(booking.status, [])
+    if payload.status not in allowed:
+        raise HTTPException(status_code=400, detail=INVALID_TRANSITION_DETAIL)
+
     booking.status = payload.status
     await db.commit()
     await db.refresh(booking)
@@ -115,6 +137,11 @@ async def force_book(payload: ForceBookRequest, request: Request, db: AsyncSessi
 
     Used by the frontend's conflict card when the driver explicitly
     confirms they want to double-book a time slot.
+
+    INVARIANT: pickup and dropoff MUST be stored in English. The frontend's
+    translateLocation() only translates FROM English -- callers that bypass
+    the AI agent (like this endpoint) are responsible for upholding this
+    themselves, since there's no normalize_location() safety net here.
     """
     booking = Booking(
         client_name=payload.client_name,
@@ -141,7 +168,7 @@ async def force_book(payload: ForceBookRequest, request: Request, db: AsyncSessi
 async def get_client_history(name: str, db: AsyncSession = Depends(get_db)):
     stmt = (
         select(Booking)
-        .where(Booking.client_name.ilike(name), Booking.status != "cancelled")
+        .where(Booking.client_name.ilike(_escape_like(name), escape="\\"), Booking.status != "cancelled")
         .order_by(Booking.trip_date.desc(), Booking.trip_time.desc())
     )
     result = await db.execute(stmt)

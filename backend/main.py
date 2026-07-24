@@ -14,7 +14,7 @@ from pathlib import Path
 
 import aiofiles
 import socketio
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +23,10 @@ from database import check_db_connection, init_db
 from routes import analytics, bookings, chat, notifications
 from services import ai_agent, reminder_service
 
+# backend/ and frontend/ are siblings both in local dev (repo root) and in
+# the production image (Dockerfile at repo root COPYs both under /app/), so
+# "parent of this file's directory, then into frontend/" resolves correctly
+# in both cases without needing an environment-specific branch.
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = (BASE_DIR.parent / "frontend").resolve()
 
@@ -55,6 +59,50 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- Optional shared-secret auth --------------------------------------------
+# Off by default (API_SECRET unset) to preserve today's open behavior for
+# local dev / anyone who hasn't opted in. Set API_SECRET to require every
+# non-exempt request to send a matching X-API-Secret header -- useful if this
+# API ends up reachable at a public URL. NOTE: this only covers plain HTTP
+# routes; Socket.IO's own ASGI app (wrapping this one) handles its handshake
+# before this middleware ever runs, so it is NOT covered by this check.
+_UNAUTHENTICATED_PATHS = {
+    "/health",
+    "/",
+    "/manifest.json",
+    "/service-worker.js",
+    "/config.js",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+}
+_UNAUTHENTICATED_PREFIXES = ("/css/", "/js/", "/icons/")
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    secret = os.getenv("API_SECRET")
+    path = request.url.path
+    if (
+        not secret
+        or path in _UNAUTHENTICATED_PATHS
+        or path.startswith(_UNAUTHENTICATED_PREFIXES)
+    ):
+        return await call_next(request)
+    if request.headers.get("X-API-Secret") != secret:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "detail": {
+                    "en": "Unauthorized.",
+                    "ar": "غير مصرح.",
+                    "fr": "Non autorisé.",
+                }
+            },
+        )
+    return await call_next(request)
+
 
 # --- Socket.IO -------------------------------------------------------------
 sio = socketio.AsyncServer(
@@ -107,6 +155,12 @@ if FRONTEND_DIR.exists():
     @app.get("/service-worker.js")
     async def service_worker():
         async with aiofiles.open(FRONTEND_DIR / "service-worker.js", mode="r") as f:
+            content = await f.read()
+        return HTMLResponse(content=content, media_type="application/javascript")
+
+    @app.get("/config.js")
+    async def config_js():
+        async with aiofiles.open(FRONTEND_DIR / "config.js", mode="r") as f:
             content = await f.read()
         return HTMLResponse(content=content, media_type="application/javascript")
 
