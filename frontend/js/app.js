@@ -301,35 +301,11 @@
 
     items.sort((a, b) => (a.trip_date + a.trip_time).localeCompare(b.trip_date + b.trip_time));
 
-    renderNextTrip();
-
     if (items.length === 0) {
       container.innerHTML = `<div class="empty-state">${t("noBookings", state.lang)}</div>`;
       return;
     }
     container.innerHTML = items.map((b) => buildBookingCard(b)).join("");
-  }
-
-  // Next upcoming confirmed/in_progress booking, soonest first. Reuses
-  // buildBookingCard() so it gets translated name/locations, the RTL arrow
-  // and Arabic-Indic numerals for free, without action buttons.
-  function getNextTrip() {
-    const now = new Date();
-    const upcoming = state.activeBookings
-      .filter((b) => b.status === "confirmed" || b.status === "in_progress")
-      .map((b) => ({ booking: b, dt: new Date(`${b.trip_date}T${b.trip_time}`) }))
-      .filter((x) => !isNaN(x.dt) && x.dt >= now)
-      .sort((a, b) => a.dt - b.dt);
-    return upcoming.length ? upcoming[0].booking : null;
-  }
-
-  function renderNextTrip() {
-    const container = document.getElementById("next-trip-content");
-    if (!container) return;
-    const next = getNextTrip();
-    container.innerHTML = next
-      ? buildBookingCard(next, { showActions: false })
-      : `<div class="empty-state">${t("noUpcomingTrips", state.lang)}</div>`;
   }
 
   function renderHistoryList() {
@@ -367,7 +343,6 @@
   }
 
   function renderSummary() {
-    renderNextTrip();
     if (!weeklyData) return;
     document.getElementById("summary-earned").textContent = formatMoney(weeklyData.total_earned);
     document.getElementById("summary-projected").textContent = formatMoney(weeklyData.total_projected);
@@ -821,7 +796,7 @@
         .map(
           (b) => `
         <tr>
-          <td>${escapeHtml(b.client_name)}</td>
+          <td>${escapeHtml(translateName(b.client_name, state.lang))}</td>
           <td>${escapeHtml(translateLocation(b.pickup, state.lang))}</td>
           <td>${escapeHtml(translateLocation(b.dropoff, state.lang))}</td>
           <td>${formatTime(b.trip_time)}</td>

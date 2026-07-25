@@ -60,8 +60,6 @@
       earnedLabel: "Earned",
       projectedLabel: "Projected",
       weeklyChartTitle: "Last 7 Days",
-      nextTripTitle: "Your Next Trip",
-      noUpcomingTrips: "No upcoming trips",
       exportPdfButton: "Export today's schedule (PDF)",
 
       printTitle: "TaxiGo AI — Schedule",
@@ -165,8 +163,6 @@
       earnedLabel: "المكتسب",
       projectedLabel: "المتوقع",
       weeklyChartTitle: "آخر 7 أيام",
-      nextTripTitle: "رحلتك القادمة",
-      noUpcomingTrips: "لا رحلات قادمة",
       exportPdfButton: "تصدير جدول اليوم (PDF)",
 
       printTitle: "TaxiGo AI — الجدول",
@@ -270,8 +266,6 @@
       earnedLabel: "Gagné",
       projectedLabel: "Prévu",
       weeklyChartTitle: "7 derniers jours",
-      nextTripTitle: "Votre prochain trajet",
-      noUpcomingTrips: "Aucun trajet à venir",
       exportPdfButton: "Exporter le programme du jour (PDF)",
 
       printTitle: "TaxiGo AI — Planning",
