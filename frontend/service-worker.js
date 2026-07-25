@@ -9,7 +9,7 @@
  * they're fetched network-first, but the last successful response is kept
  * in a separate cache and served as a fallback when the network fails.
  */
-const CACHE_NAME = "taxigo-ai-shell-v1";
+const CACHE_NAME = "taxigo-ai-shell-v2";
 const API_CACHE_NAME = "taxigo-ai-api-v1";
 const CURRENT_CACHES = [CACHE_NAME, API_CACHE_NAME];
 

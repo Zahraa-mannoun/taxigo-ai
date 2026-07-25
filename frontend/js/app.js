@@ -17,6 +17,8 @@
     isRtl,
     ONBOARDING_EXAMPLES,
     translateLocation,
+    translateName,
+    toArabicNumerals,
     formatDate: formatDateShared,
     formatTime: formatTimeShared,
     formatMoney: formatMoneyShared,
@@ -77,14 +79,45 @@
     return formatMoneyShared(amount, state.lang);
   }
 
+  function escapeRegExp(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  // Pulls out every client name that might be embedded in this /chat
+  // response's reply text, so localizeReplyText() knows what to translate.
+  function extractClientNames(result) {
+    const names = [];
+    if (result.booking) names.push(result.booking.client_name);
+    if (result.conflict) {
+      if (result.conflict.conflicting_booking) names.push(result.conflict.conflicting_booking.client_name);
+      if (result.conflict.pending_booking) names.push(result.conflict.pending_booking.client_name);
+    }
+    return names;
+  }
+
   // Post-processes AI-generated reply text for display: translates any
-  // recognized Lebanese location names, and (for AR/FR only) reformats the
-  // ISO dates / 12h times / dollar amounts the backend embeds in its fixed
-  // English-authored templates into the current language's conventions.
-  // EN is returned completely untouched.
-  function localizeReplyText(text) {
+  // recognized Lebanese location names and (AR only) common first names,
+  // and (for AR/FR only) reformats the ISO dates / 12h times / dollar
+  // amounts the backend embeds in its fixed English-authored templates into
+  // the current language's conventions. EN is returned completely untouched.
+  //
+  // clientNames: names known to appear in THIS specific reply (pulled from
+  // result.booking / result.conflict by the caller) -- translated by exact,
+  // word-boundary-safe substitution rather than scanning the whole dictionary
+  // against arbitrary text, which would risk false positives on ordinary
+  // words that happen to also be names (e.g. "Grace").
+  function localizeReplyText(text, clientNames) {
     if (!text || state.lang === "en") return text;
     let result = translateLocation(text, state.lang);
+
+    if (state.lang === "ar" && clientNames && clientNames.length) {
+      clientNames.filter(Boolean).forEach((name) => {
+        const translated = translateName(name, state.lang);
+        if (translated !== name) {
+          result = result.replace(new RegExp(`\\b${escapeRegExp(name)}\\b`, "g"), translated);
+        }
+      });
+    }
 
     result = result.replace(/\b\d{4}-\d{2}-\d{2}\b/g, (match) => formatDateShared(match, state.lang));
 
@@ -200,19 +233,31 @@
       }
       actionButtons += `<button data-action="cancel" data-id="${booking.id}" class="danger">${t("cancelBooking", state.lang)}</button>`;
     }
+    // The data-client attribute drives the /clients/{name}/history lookup,
+    // so it MUST stay the original stored name -- only the visible text
+    // (clientDisplay, below) is translated.
     actionButtons += `<button data-action="client-history" data-client="${escapeHtml(booking.client_name)}">${t("viewClientHistory", state.lang)}</button>`;
 
-    // Location names are translated for display; client names never are.
+    // Location and (common Lebanese first) names are translated for display
+    // only -- the underlying booking object / DB values are never touched.
     const pickupDisplay = translateLocation(booking.pickup, state.lang);
     const dropoffDisplay = translateLocation(booking.dropoff, state.lang);
+    const clientDisplay = translateName(booking.client_name, state.lang);
+    const bookingNumber = state.lang === "ar" ? toArabicNumerals(booking.id) : booking.id;
+
+    // In AR, the route reads right-to-left: keep pickup/dropoff in the same
+    // DOM order as EN/FR (the surrounding RTL flex row visually reverses it
+    // for us -- pickup ends up on the right, dropoff on the left) and just
+    // swap the arrow glyph so it still points the right way.
+    const arrow = state.lang === "ar" ? "←" : "→";
 
     return `
       <div class="booking-card status-${booking.status}" data-booking-id="${booking.id}">
         <div class="booking-card-top">
-          <span class="booking-client">${escapeHtml(booking.client_name)}</span>
+          <span class="booking-client">${escapeHtml(clientDisplay)} <span class="booking-number">#${bookingNumber}</span></span>
           <span class="status-badge status-${booking.status}">${statusLabel}</span>
         </div>
-        <div class="booking-route">${escapeHtml(pickupDisplay)} → ${escapeHtml(dropoffDisplay)}</div>
+        <div class="booking-route">${escapeHtml(pickupDisplay)} ${arrow} ${escapeHtml(dropoffDisplay)}</div>
         <div class="booking-meta">
           <span>${formatDateLabel(booking.trip_date)} · ${formatTime(booking.trip_time)}</span>
           <span class="booking-fare">${formatMoney(booking.fare)}</span>
@@ -256,11 +301,35 @@
 
     items.sort((a, b) => (a.trip_date + a.trip_time).localeCompare(b.trip_date + b.trip_time));
 
+    renderNextTrip();
+
     if (items.length === 0) {
       container.innerHTML = `<div class="empty-state">${t("noBookings", state.lang)}</div>`;
       return;
     }
     container.innerHTML = items.map((b) => buildBookingCard(b)).join("");
+  }
+
+  // Next upcoming confirmed/in_progress booking, soonest first. Reuses
+  // buildBookingCard() so it gets translated name/locations, the RTL arrow
+  // and Arabic-Indic numerals for free, without action buttons.
+  function getNextTrip() {
+    const now = new Date();
+    const upcoming = state.activeBookings
+      .filter((b) => b.status === "confirmed" || b.status === "in_progress")
+      .map((b) => ({ booking: b, dt: new Date(`${b.trip_date}T${b.trip_time}`) }))
+      .filter((x) => !isNaN(x.dt) && x.dt >= now)
+      .sort((a, b) => a.dt - b.dt);
+    return upcoming.length ? upcoming[0].booking : null;
+  }
+
+  function renderNextTrip() {
+    const container = document.getElementById("next-trip-content");
+    if (!container) return;
+    const next = getNextTrip();
+    container.innerHTML = next
+      ? buildBookingCard(next, { showActions: false })
+      : `<div class="empty-state">${t("noUpcomingTrips", state.lang)}</div>`;
   }
 
   function renderHistoryList() {
@@ -273,7 +342,8 @@
 
     const totalEarned = items.reduce((sum, b) => sum + Number(b.fare), 0);
     document.getElementById("history-total-earned").textContent = formatMoney(totalEarned);
-    document.getElementById("history-total-trips").textContent = String(items.length);
+    document.getElementById("history-total-trips").textContent =
+      state.lang === "ar" ? toArabicNumerals(items.length) : String(items.length);
 
     if (items.length === 0) {
       container.innerHTML = `<div class="empty-state">${t("noBookings", state.lang)}</div>`;
@@ -297,6 +367,7 @@
   }
 
   function renderSummary() {
+    renderNextTrip();
     if (!weeklyData) return;
     document.getElementById("summary-earned").textContent = formatMoney(weeklyData.total_earned);
     document.getElementById("summary-projected").textContent = formatMoney(weeklyData.total_projected);
@@ -514,10 +585,11 @@
 
       hideTyping();
 
+      const clientNames = extractClientNames(result);
       if (result.action === "conflict" && result.conflict) {
-        addConflictBubble(result.conflict, localizeReplyText(result.reply));
+        addConflictBubble(result.conflict, localizeReplyText(result.reply, clientNames));
       } else {
-        addChatBubble(localizeReplyText(result.reply), "assistant");
+        addChatBubble(localizeReplyText(result.reply, clientNames), "assistant");
       }
       // Conversation history sent back to the AI keeps the original
       // backend-authored text -- only the on-screen bubble is localized.
@@ -608,8 +680,9 @@
     const panel = document.getElementById("client-history-panel");
     overlay.classList.add("open");
     panel.classList.add("open");
-    // Client names are never translated -- only locations are.
-    document.getElementById("client-history-name").textContent = clientName;
+    // clientName (from data-client) is always the original stored name --
+    // it's what the API call below needs. Only the heading TEXT is translated.
+    document.getElementById("client-history-name").textContent = translateName(clientName, state.lang);
     document.getElementById("client-history-list").innerHTML = "";
 
     try {
@@ -618,7 +691,8 @@
       const projected = data.trips.reduce((sum, b) => sum + Number(b.fare), 0);
       document.getElementById("client-history-earned").textContent = formatMoney(earned);
       document.getElementById("client-history-projected").textContent = formatMoney(projected);
-      document.getElementById("client-history-trips").textContent = String(data.total_trips);
+      document.getElementById("client-history-trips").textContent =
+        state.lang === "ar" ? toArabicNumerals(data.total_trips) : String(data.total_trips);
       document.getElementById("client-history-list").innerHTML = data.trips.length
         ? data.trips.map((b) => buildBookingCard(b, { showActions: false })).join("")
         : `<div class="empty-state">${t("noBookings", state.lang)}</div>`;

@@ -471,6 +471,12 @@ html[dir="rtl"] .search-box input {
   font-size: 0.95rem;
 }
 
+.booking-number {
+  font-weight: 600;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
 .status-badge {
   font-size: 0.7rem;
   font-weight: 700;
@@ -794,7 +800,8 @@ html[dir="rtl"] .search-box input {
 .summary-tile.earned .value { color: var(--success); }
 .summary-tile.projected .value { color: var(--accent); }
 
-.chart-card {
+.chart-card,
+.next-trip-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -802,7 +809,8 @@ html[dir="rtl"] .search-box input {
   margin-bottom: 16px;
 }
 
-.chart-card h3 {
+.chart-card h3,
+.next-trip-card h3 {
   font-size: 0.95rem;
   margin-bottom: 12px;
 }

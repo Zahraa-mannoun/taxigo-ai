@@ -59,13 +59,38 @@
     if (el) el.classList.add("hidden");
   }
 
-  // Backend reminders embed raw English pickup/dropoff names even in the
-  // Arabic message (message_ar) -- run them through translateLocation() so
-  // no untranslated location names leak into the Arabic UI. No French
-  // reminder text exists yet, so FR falls back to English here.
+  function escapeRegExp(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  // Backend reminders embed raw English pickup/dropoff names and the client's
+  // stored (original) name in all three message_* variants -- run the
+  // language-matched one through translateLocation()/translateName() so no
+  // untranslated place or first name leaks into the AR UI, normalize the
+  // EN/FR "->" into a real arrow glyph, and (AR only) switch to Arabic-Indic
+  // digits for the embedded minutes-until countdown. The Arabic template
+  // already reads "من X إلى Y" rather than using an arrow character, so
+  // there's nothing to flip there -- only EN/FR need the "->" swap.
   function reminderMessageFor(payload) {
-    const msg = currentLang === "ar" ? payload.message_ar : payload.message_en;
-    return TaxiGoI18n.translateLocation(msg, currentLang);
+    let msg =
+      currentLang === "ar" ? payload.message_ar : currentLang === "fr" ? payload.message_fr : payload.message_en;
+
+    msg = TaxiGoI18n.translateLocation(msg, currentLang);
+
+    if (payload.client_name) {
+      const translatedName = TaxiGoI18n.translateName(payload.client_name, currentLang);
+      if (translatedName !== payload.client_name) {
+        msg = msg.replace(new RegExp(`\\b${escapeRegExp(payload.client_name)}\\b`, "g"), translatedName);
+      }
+    }
+
+    if (currentLang === "ar") {
+      msg = TaxiGoI18n.toArabicNumerals(msg);
+    } else {
+      msg = msg.replace(/->/g, "→");
+    }
+
+    return msg;
   }
 
   function renderList() {

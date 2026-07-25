@@ -60,6 +60,8 @@
       earnedLabel: "Earned",
       projectedLabel: "Projected",
       weeklyChartTitle: "Last 7 Days",
+      nextTripTitle: "Your Next Trip",
+      noUpcomingTrips: "No upcoming trips",
       exportPdfButton: "Export today's schedule (PDF)",
 
       printTitle: "TaxiGo AI — Schedule",
@@ -163,6 +165,8 @@
       earnedLabel: "المكتسب",
       projectedLabel: "المتوقع",
       weeklyChartTitle: "آخر 7 أيام",
+      nextTripTitle: "رحلتك القادمة",
+      noUpcomingTrips: "لا رحلات قادمة",
       exportPdfButton: "تصدير جدول اليوم (PDF)",
 
       printTitle: "TaxiGo AI — الجدول",
@@ -266,6 +270,8 @@
       earnedLabel: "Gagné",
       projectedLabel: "Prévu",
       weeklyChartTitle: "7 derniers jours",
+      nextTripTitle: "Votre prochain trajet",
+      noUpcomingTrips: "Aucun trajet à venir",
       exportPdfButton: "Exporter le programme du jour (PDF)",
 
       printTitle: "TaxiGo AI — Planning",
@@ -422,9 +428,19 @@
   }
 
   // --------------------------------------------------------------------
+  // Arabic-Indic numerals. Only ever applied in AR mode -- EN and FR always
+  // keep Western digits.
+  // --------------------------------------------------------------------
+  function toArabicNumerals(str) {
+    return String(str).replace(/[0-9]/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d]);
+  }
+
+  // --------------------------------------------------------------------
   // Locale-aware date/time/money formatting (Fix 5). EN is left byte-for-byte
   // as it was before -- only AR/FR get the new formats. Shared by app.js
-  // and charts.js so there's one source of truth for both.
+  // and charts.js so there's one source of truth for both. AR additionally
+  // gets Arabic-Indic digits (Western digits are only ever an intermediate
+  // step here, converted just before returning).
   // --------------------------------------------------------------------
   const AR_MONTHS = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
   const FR_MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
@@ -437,7 +453,8 @@
     if (lang === "ar" || lang === "fr") {
       const [y, m, d] = dateStr.split("-").map(Number);
       const months = lang === "ar" ? AR_MONTHS : FR_MONTHS;
-      return withYear === false ? `${d} ${months[m - 1]}` : `${d} ${months[m - 1]} ${y}`;
+      const result = withYear === false ? `${d} ${months[m - 1]}` : `${d} ${months[m - 1]} ${y}`;
+      return lang === "ar" ? toArabicNumerals(result) : result;
     }
     // en: unchanged short format
     const date = new Date(`${dateStr}T00:00:00`);
@@ -459,7 +476,7 @@
     let h12 = h % 12;
     if (h12 === 0) h12 = 12;
     if (lang === "ar") {
-      return `${h12}:${m} ${AR_PERIOD[period]}`;
+      return toArabicNumerals(`${h12}:${m} ${AR_PERIOD[period]}`);
     }
     return `${h12}:${m} ${period}`; // en: unchanged
   }
@@ -467,8 +484,61 @@
   function formatMoney(amount, lang) {
     const fixed = Number(amount).toFixed(2);
     if (lang === "fr") return `${fixed.replace(".", ",")} $`;
-    if (lang === "ar") return `${fixed}$`;
+    if (lang === "ar") return `${toArabicNumerals(fixed)}$`;
     return `$${fixed}`; // en: unchanged
+  }
+
+  // --------------------------------------------------------------------
+  // Common Lebanese/Arab first-name translations. Client names are never
+  // stored translated -- this is a display-only lookup, and only ever
+  // applies in AR mode (FR speakers read Latin names as-is). Names already
+  // in Arabic script simply won't match any (Latin, lowercase) key here, so
+  // they pass through unchanged -- no separate "already Arabic" check needed.
+  // --------------------------------------------------------------------
+  const NAMES = {
+    // Male names
+    'ali': 'علي', 'ahmad': 'أحمد', 'mohammed': 'محمد', 'mohamed': 'محمد',
+    'muhammad': 'محمد', 'hassan': 'حسن', 'hussein': 'حسين', 'omar': 'عمر',
+    'khaled': 'خالد', 'karim': 'كريم', 'marwan': 'مروان', 'fadi': 'فادي',
+    'georges': 'جورج', 'george': 'جورج', 'tony': 'طوني', 'elie': 'إيلي',
+    'michel': 'ميشال', 'pierre': 'بيار', 'joseph': 'جوزيف', 'charbel': 'شربل',
+    'ramzi': 'رامي', 'rami': 'رامي', 'sami': 'سامي', 'nader': 'نادر',
+    'wissam': 'وسام', 'wassim': 'وسيم', 'tarek': 'طارق', 'bilal': 'بلال',
+    'walid': 'وليد', 'ziad': 'زياد', 'jad': 'جاد', 'marc': 'مارك',
+    'mark': 'مارك', 'mike': 'مايك', 'michael': 'مايكل', 'john': 'جون',
+    'joe': 'جو', 'david': 'ديفيد', 'nour': 'نور', 'adam': 'آدم',
+    'ibrahim': 'إبراهيم', 'youssef': 'يوسف', 'yousef': 'يوسف', 'bassem': 'باسم',
+    'bassel': 'باسل', 'nadim': 'نديم', 'samir': 'سمير', 'elias': 'إلياس',
+    'emile': 'إميل', 'antoine': 'أنطوان', 'roger': 'روجر', 'simon': 'سيمون',
+    'ryan': 'ريان',
+
+    // Female names
+    'sara': 'سارة', 'sarah': 'سارة', 'maya': 'مايا', 'mia': 'ميا',
+    'lara': 'لارا', 'layla': 'ليلى', 'leila': 'ليلى', 'rima': 'ريما',
+    'rita': 'ريتا', 'nadia': 'نادية', 'nadine': 'نادين', 'carla': 'كارلا',
+    'karen': 'كارن', 'joelle': 'جويل', 'marie': 'ماري', 'mary': 'ماري',
+    'diana': 'ديانا', 'dina': 'دينا', 'hana': 'هنا', 'hanan': 'حنان',
+    'fatima': 'فاطمة', 'fatime': 'فاطمة', 'zahra': 'زهراء', 'zahraa': 'زهراء',
+    'mariam': 'مريم', 'miriam': 'مريم', 'rania': 'رانيا', 'rana': 'رنا',
+    'dolly': 'دولي', 'tracy': 'تريسي', 'jessica': 'جيسيكا', 'sandra': 'ساندرا',
+    'celine': 'سيلين', 'lynn': 'لين', 'line': 'لين', 'yasmine': 'ياسمين',
+    'jasmine': 'ياسمين', 'rola': 'رولا', 'roula': 'رولا', 'amal': 'أمل',
+    'iman': 'إيمان', 'suha': 'سها', 'rawya': 'روية', 'grace': 'غريس',
+    'christelle': 'كريستيل', 'stephanie': 'ستيفاني', 'emily': 'إيملي',
+    'emma': 'إيما', 'julia': 'جوليا', 'lea': 'ليا',
+  };
+
+  function translateName(name, targetLang) {
+    if (!name || targetLang !== 'ar') return name;
+    const lower = name.toLowerCase().trim();
+    // Check full name match first
+    if (NAMES[lower]) return NAMES[lower];
+    // Check first word only (in case full name like "Ahmad Khalil")
+    const firstName = lower.split(' ')[0];
+    if (NAMES[firstName]) {
+      return NAMES[firstName] + (name.split(' ').length > 1 ? ' ' + name.split(' ').slice(1).join(' ') : '');
+    }
+    return name; // return original if no translation found
   }
 
   global.TaxiGoI18n = {
@@ -481,5 +551,8 @@
     formatDate,
     formatTime,
     formatMoney,
+    toArabicNumerals,
+    NAMES,
+    translateName,
   };
 })(window);
