@@ -154,6 +154,30 @@ def normalize_location(text: Optional[str]) -> Optional[str]:
                 return LOCATION_EN_CANONICAL[matched_key]
     return text
 
+# --------------------------------------------------------------------------
+# Simple-greeting short-circuit
+#
+# llama-3.3-70b-versatile is unreliable at tool calling for trivial
+# conversational input -- a bare "صباح النور" (or "hi"/"bonjour") makes it
+# emit its own native <function=chat>...</function> tag syntax instead of a
+# clean structured tool call, which fails validation on both the initial
+# request AND the temperature-nudged retry below, surfacing an error to the
+# driver for something as simple as a greeting. Since these messages never
+# need tool selection anyway, skip the Groq call entirely and answer from
+# TEMPLATES -- this also avoids burning API quota on a non-task message.
+# --------------------------------------------------------------------------
+SIMPLE_GREETINGS = [
+    "صباح الخير", "صباح النور", "مساء الخير", "مساء النور", "هلا", "مرحبا",
+    "hi", "hello", "hey", "good morning", "good evening",
+    "bonjour", "salut", "bonsoir",
+]
+
+
+def is_simple_greeting(message: str) -> bool:
+    normalized = message.strip().lower()
+    return len(normalized) < 20 and any(g in normalized for g in SIMPLE_GREETINGS)
+
+
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
 _client: Optional[AsyncGroq] = None
@@ -220,7 +244,10 @@ TOOLS: list[dict[str, Any]] = [
                     "dropoff": {"type": "string", "description": "Drop-off / destination location."},
                     "trip_date": {"type": "string", "description": "Trip date resolved to YYYY-MM-DD."},
                     "trip_time": {"type": "string", "description": "Trip time resolved to 24h HH:MM."},
-                    "fare": {"type": "number", "description": "Agreed fare/fee amount, if mentioned."},
+                    "fare": {
+                        "type": ["number", "string"],
+                        "description": "Agreed fare/fee amount, if mentioned. Plain number, e.g. 20 -- but a numeric string is also accepted and coerced.",
+                    },
                     "notes": {"type": "string", "description": "Any extra notes about the trip."},
                 },
                 "required": ["client_name", "pickup", "dropoff", "trip_date", "trip_time"],
@@ -241,7 +268,10 @@ TOOLS: list[dict[str, Any]] = [
                     "dropoff": {"type": "string", "description": "New drop-off location."},
                     "trip_date": {"type": "string", "description": "New trip date (YYYY-MM-DD)."},
                     "trip_time": {"type": "string", "description": "New trip time (24h HH:MM)."},
-                    "fare": {"type": "number", "description": "New fare/fee amount."},
+                    "fare": {
+                        "type": ["number", "string"],
+                        "description": "New fare/fee amount. Plain number, e.g. 20 -- but a numeric string is also accepted and coerced.",
+                    },
                     "notes": {"type": "string", "description": "New notes."},
                 },
                 "required": ["client_name"],
@@ -387,6 +417,8 @@ the driver what today's date is.
 
 ## Synonyms you must understand
 - "fee", "fare", "fees", "أجرة", "التسعيرة", "السعر", "cost" all refer to the `fare` field.
+- The `fare` field must always be a plain number without currency symbols or
+  quotes, e.g. 20 -- not "20" or "$20".
 - "بكرا", "baacher", "bukra", "tomorrow" -> next calendar day.
 - "هلق", "today", "aujourd'hui" -> today's date above.
 - Specific dates (e.g. "August 3rd", "3/8") should be resolved to YYYY-MM-DD
@@ -429,6 +461,11 @@ the driver what today's date is.
 # Bilingual/trilingual response templates (deterministic, not model-generated)
 # --------------------------------------------------------------------------
 TEMPLATES: dict[str, dict[str, str]] = {
+    "greeting": {
+        "en": "Hello! How can I help you today?",
+        "ar": "أهلاً وسهلاً! كيف فيني ساعدك اليوم؟",
+        "fr": "Bonjour ! Comment puis-je vous aider aujourd'hui ?",
+    },
     "ai_error": {
         "en": "Sorry, I'm having trouble reaching the AI service right now. Please try again in a moment.",
         "ar": "عذرًا، في مشكلة بالوصول لخدمة الذكاء الاصطناعي حاليًا. جرب كمان شوي.",
@@ -587,8 +624,20 @@ def _parse_time(value: Any) -> Optional[dt.time]:
 
 
 def _parse_fare(value: Any) -> Decimal:
+    """Coerce a fare value to Decimal.
+
+    Safety net for extract_booking/update_booking: even with the schema now
+    accepting both number and string, the model may still hand back a fare
+    string with currency symbols/commas (e.g. "$20", "20,000") rather than a
+    bare number, so strip those before parsing instead of just trusting the
+    prompt instruction.
+    """
     if value is None or value == "":
         return Decimal("0")
+    if isinstance(value, str):
+        value = value.replace("$", "").replace(",", "").strip()
+        if not value:
+            return Decimal("0")
     try:
         return Decimal(str(value))
     except InvalidOperation:
@@ -969,6 +1018,9 @@ async def process_message(
     history: list[dict],
     lang: str,
 ) -> dict:
+    if is_simple_greeting(message):
+        return {"reply": t("greeting", lang), "action": "chat"}
+
     try:
         client = get_client()
     except RuntimeError:
