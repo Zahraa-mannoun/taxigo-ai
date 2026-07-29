@@ -178,6 +178,45 @@ def is_simple_greeting(message: str) -> bool:
     return len(normalized) < 20 and any(g in normalized for g in SIMPLE_GREETINGS)
 
 
+# --------------------------------------------------------------------------
+# Fallback parser for Groq's native <function=...> tag syntax
+#
+# The greeting pre-check above only catches short literal greetings on the
+# way IN. It can't help when the model itself decides mid-conversation to
+# "call" the `chat` pseudo-tool -- `chat` is deliberately NOT a real entry in
+# TOOLS (see system prompt item 8: "Do NOT call a tool; just reply naturally
+# in your message content"), so there is no valid structured call the model
+# could ever produce for it. When it tries anyway, Groq rejects the
+# malformed call with a "tool_use_failed" BadRequestError whose
+# `failed_generation` field holds the model's raw, unparsed output, e.g.
+# '<function=chat>Good morning, have a great day</function>'. Retrying (as
+# done for genuine extraction mistakes on real tools) just reproduces the
+# same mistake, so instead recover the human-readable text directly from
+# that field and treat it as a normal chat reply.
+# --------------------------------------------------------------------------
+_FALLBACK_CHAT_TAG_RE = re.compile(r"<function=chat>(.*?)</function>", re.DOTALL)
+
+
+def extract_fallback_chat_text(error_body: Any) -> Optional[str]:
+    """Recover the reply text from a Groq tool_use_failed error caused by the
+    model emitting its native <function=chat>text</function> syntax.
+
+    Returns None if `error_body` doesn't match this specific failure shape
+    (e.g. a genuine tool_use_failed on a real tool like extract_booking,
+    which should still go through the normal retry path instead).
+    """
+    if isinstance(error_body, dict):
+        failed_generation = error_body.get("error", {}).get("failed_generation")
+    else:
+        failed_generation = error_body
+    if not isinstance(failed_generation, str):
+        return None
+    match = _FALLBACK_CHAT_TAG_RE.search(failed_generation)
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
 _client: Optional[AsyncGroq] = None
@@ -1049,14 +1088,28 @@ async def process_message(
     except BadRequestError as exc:
         # Groq occasionally emits llama-3.3-70b-versatile's native <function=...>
         # tag syntax instead of a clean structured tool call ("tool_use_failed").
-        # This is a known model-side quirk, not caused by our input, and tends to
-        # be deterministic at a fixed temperature -- so the retry nudges the
-        # temperature up slightly to escape the same bad generation.
+        # This is a known model-side quirk, not caused by our input. If it's the
+        # `chat` pseudo-tool specifically, retrying won't help (see
+        # extract_fallback_chat_text docstring) -- recover the text directly
+        # instead of burning another Groq call on a guaranteed repeat failure.
+        fallback_text = extract_fallback_chat_text(exc.body)
+        if fallback_text is not None:
+            return {"reply": fallback_text or t("generic_error", lang), "action": "chat"}
+
+        # Otherwise this is a genuine malformed tool call on a real tool (e.g.
+        # extract_booking) -- tends to be deterministic at a fixed temperature,
+        # so nudge it up slightly to escape the same bad generation.
         logger.warning("Groq tool-call generation failed, retrying with nudged temperature: %s", exc)
         try:
             completion = await client.chat.completions.create(
                 **{**completion_kwargs, "temperature": 0.5}
             )
+        except BadRequestError as retry_exc:
+            fallback_text = extract_fallback_chat_text(retry_exc.body)
+            if fallback_text is not None:
+                return {"reply": fallback_text or t("generic_error", lang), "action": "chat"}
+            logger.exception("Groq retry after tool_use_failed also failed")
+            return {"reply": t("ai_error", lang), "action": "error"}
         except Exception:
             logger.exception("Groq retry after tool_use_failed also failed")
             return {"reply": t("ai_error", lang), "action": "error"}
