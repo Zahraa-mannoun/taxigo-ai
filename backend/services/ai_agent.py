@@ -474,6 +474,15 @@ the driver what today's date is.
   طرابلس=Tripoli, صيدا=Saida, جونيه=Jounieh, الأشرفية=Achrafieh,
   وسط بيروت=Downtown, المرفأ=Port
 
+## Client name storage rule
+- Always save `client_name` in Latin/English script in the database, even if
+  the driver speaks in Arabic or French. The frontend will translate it back
+  for display in Arabic mode. Example: if the driver says "علي", save as
+  "Ali". Common mappings: علي=Ali, أحمد=Ahmad, محمد=Mohammed, حسن=Hassan,
+  عمر=Omar, خالد=Khaled, سارة=Sara, مايا=Maya, نادية=Nadia, فاطمة=Fatima.
+  For a name you don't recognize, transliterate it to Latin letters rather
+  than storing the Arabic script as-is.
+
 ## Conflict detection (handled automatically, not by you)
 - The backend automatically checks whether a new or changed trip falls within
   {CONFLICT_WINDOW_MINUTES} minutes of another trip on the same date. You do NOT

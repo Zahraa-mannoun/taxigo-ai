@@ -484,10 +484,10 @@
 
   // --------------------------------------------------------------------
   // Common Lebanese/Arab first-name translations. Client names are never
-  // stored translated -- this is a display-only lookup, and only ever
-  // applies in AR mode (FR speakers read Latin names as-is). Names already
-  // in Arabic script simply won't match any (Latin, lowercase) key here, so
-  // they pass through unchanged -- no separate "already Arabic" check needed.
+  // stored translated -- this is a display-only lookup, applied in AR mode
+  // (en -> ar) and, via NAMES_REVERSE below, in EN/FR mode for any name
+  // that's still stored in Arabic script (ar -> en). Names with no match
+  // in either direction pass through unchanged.
   // --------------------------------------------------------------------
   const NAMES = {
     // Male names
@@ -522,17 +522,44 @@
     'emma': 'إيما', 'julia': 'جوليا', 'lea': 'ليا',
   };
 
+  // Reverse of NAMES (ar -> capitalized en), for the case where a client
+  // name was originally stored in Arabic script -- e.g. from a voice
+  // booking the driver spoke in Arabic. See CLIENT NAME STORAGE RULE in
+  // backend/services/ai_agent.py's system prompt: the backend now always
+  // normalizes client_name to Latin script before saving, so this is only
+  // a safety net for names that slip through (older rows, or a name the
+  // model didn't recognize/transliterate).
+  const NAMES_REVERSE = {};
+  Object.entries(NAMES).forEach(([en, ar]) => {
+    NAMES_REVERSE[ar] = en.charAt(0).toUpperCase() + en.slice(1);
+  });
+
   function translateName(name, targetLang) {
-    if (!name || targetLang !== 'ar') return name;
-    const lower = name.toLowerCase().trim();
-    // Check full name match first
-    if (NAMES[lower]) return NAMES[lower];
-    // Check first word only (in case full name like "Ahmad Khalil")
-    const firstName = lower.split(' ')[0];
-    if (NAMES[firstName]) {
-      return NAMES[firstName] + (name.split(' ').length > 1 ? ' ' + name.split(' ').slice(1).join(' ') : '');
+    if (!name) return name;
+
+    if (targetLang === 'ar') {
+      const lower = name.toLowerCase().trim();
+      // Check full name match first
+      if (NAMES[lower]) return NAMES[lower];
+      // Check first word only (in case full name like "Ahmad Khalil")
+      const firstName = lower.split(' ')[0];
+      if (NAMES[firstName]) {
+        return NAMES[firstName] + (name.split(' ').length > 1 ? ' ' + name.split(' ').slice(1).join(' ') : '');
+      }
+      return name; // return original if no translation found
     }
-    return name; // return original if no translation found
+
+    if (targetLang === 'en' || targetLang === 'fr') {
+      const trimmed = name.trim();
+      if (NAMES_REVERSE[trimmed]) return NAMES_REVERSE[trimmed];
+      const firstName = trimmed.split(' ')[0];
+      if (NAMES_REVERSE[firstName]) {
+        return NAMES_REVERSE[firstName] + (trimmed.split(' ').length > 1 ? ' ' + trimmed.split(' ').slice(1).join(' ') : '');
+      }
+      return name;
+    }
+
+    return name;
   }
 
   global.TaxiGoI18n = {
