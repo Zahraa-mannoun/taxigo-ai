@@ -193,8 +193,36 @@ def is_simple_greeting(message: str) -> bool:
 # done for genuine extraction mistakes on real tools) just reproduces the
 # same mistake, so instead recover the human-readable text directly from
 # that field and treat it as a normal chat reply.
+#
+# The model doesn't always put plain text inside the tag, though -- since
+# every *real* tool call takes a JSON object argument, it sometimes forces
+# `chat` into the same mold and emits
+# '<function=chat>{"message": "Good morning..."}</function>'. Returning that
+# raw JSON string as-is as `reply` would leak it straight to the frontend
+# (ChatResponse.reply is a plain str, and the chat bubble just renders
+# whatever string it's given via textContent -- there is no JSON parsing on
+# the display side, nor should there be), so unwrap it here.
 # --------------------------------------------------------------------------
 _FALLBACK_CHAT_TAG_RE = re.compile(r"<function=chat>(.*?)</function>", re.DOTALL)
+_JSON_MESSAGE_KEYS = ("message", "text", "reply", "content")
+
+
+def _unwrap_json_message(text: str) -> str:
+    """If `text` is a JSON object like {"message": "..."}, return the
+    human-readable string inside it; otherwise return `text` unchanged."""
+    stripped = text.strip()
+    if not stripped.startswith("{"):
+        return text
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError:
+        return text
+    if isinstance(parsed, dict):
+        for key in _JSON_MESSAGE_KEYS:
+            value = parsed.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return text
 
 
 def extract_fallback_chat_text(error_body: Any) -> Optional[str]:
@@ -214,7 +242,7 @@ def extract_fallback_chat_text(error_body: Any) -> Optional[str]:
     match = _FALLBACK_CHAT_TAG_RE.search(failed_generation)
     if not match:
         return None
-    return match.group(1).strip()
+    return _unwrap_json_message(match.group(1).strip())
 
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
@@ -1130,7 +1158,8 @@ async def process_message(
     tool_calls = choice.tool_calls or []
 
     if not tool_calls:
-        return {"reply": choice.content or t("generic_error", lang), "action": "chat"}
+        content = _unwrap_json_message(choice.content) if choice.content else None
+        return {"reply": content or t("generic_error", lang), "action": "chat"}
 
     call = tool_calls[0]
     name = call.function.name
