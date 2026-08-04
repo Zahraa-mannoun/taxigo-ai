@@ -6,14 +6,14 @@ A conversational AI dispatch assistant for independent taxi drivers in Lebanon. 
 
 ## Features
 
-- 💬 **Natural-language dispatch** — "Book Ali tomorrow 3pm from Hamra to the airport" just works, in English, Lebanese Arabic (script or Arabizi), or French.
-- 🧠 **Groq-powered agent** (`llama-3.3-70b-versatile`) classifies each message into one of 8 actions and extracts the details; all confirmations/errors are deterministic, bilingual templates — never AI-hallucinated text.
-- ⚠️ **Automatic conflict detection** — warns when two trips land within 60 minutes of each other, with a one-tap "book anyway" override.
-- ⏰ **Smart reminders** — a background job pings the driver (and every connected device, via Socket.IO) 28–32 minutes before each pickup, once per trip.
-- 📊 **Earnings you can trust** — "Earned" (completed trips only) vs. "Projected" (all active trips) are always kept separate; cancelled trips never count.
+- 💬 **Natural-language dispatch**  "Book Ali tomorrow 3pm from Hamra to the airport" just works, in English, Lebanese Arabic (script or Arabizi), or French.
+- 🧠 **Groq-powered agent** (`llama-3.3-70b-versatile`) classifies each message into one of 8 actions and extracts the details; all confirmations/errors are deterministic, bilingual templates  never AI-hallucinated text.
+- ⚠️ **Automatic conflict detection**  warns when two trips land within 60 minutes of each other, with a one-tap "book anyway" override.
+- ⏰ **Smart reminders** a background job pings the driver (and every connected device, via Socket.IO) 28–32 minutes before each pickup, once per trip.
+- 📊 **Earnings you can trust**  "Earned" (completed trips only) vs. "Projected" (all active trips) are always kept separate; cancelled trips never count.
 - 🌍 **Trilingual UI** — English / Arabic (full RTL) / French, with a language toggle that re-renders everything including the AI's own replies.
-- 🎙️ **Voice in, voice out** — Web Speech API mic input and text-to-speech, with locale fallback chains per language.
-- 📱 **Fully responsive** — bottom-nav mobile layout, collapsible-sidebar tablet layout, fixed dual-pane desktop layout.
+- 🎙️ **Voice in, voice out** Web Speech API mic input and text-to-speech, with locale fallback chains per language.
+- 📱 **Fully responsive**  bottom-nav mobile layout, collapsible-sidebar tablet layout, fixed dual-pane desktop layout.
 - 🌓 **Dark/light theme**, 🔔 **notification bell** with history, 🧾 **per-client history panel**, 📈 **Chart.js weekly earnings chart**, 🖨️ **one-tap PDF export** of today's schedule.
 - 👋 **First-run onboarding** (3 steps, skippable, shown once).
 - 📴 **Installable PWA** with offline app-shell caching.
