@@ -9,7 +9,12 @@
  * they're fetched network-first, but the last successful response is kept
  * in a separate cache and served as a fallback when the network fails.
  */
-const CACHE_NAME = "taxigo-ai-shell-v2";
+// Bump this on every deploy that touches an APP_SHELL file. cacheFirstStatic()
+// below serves the cached copy first and only refreshes the cache in the
+// background for the *next* load -- without a version bump, a browser that
+// already has the shell cached can keep running old JS/CSS indefinitely,
+// including JS containing already-fixed bugs.
+const CACHE_NAME = "taxigo-ai-shell-v3";
 const API_CACHE_NAME = "taxigo-ai-api-v1";
 const CURRENT_CACHES = [CACHE_NAME, API_CACHE_NAME];
 
