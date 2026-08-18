@@ -604,6 +604,11 @@ TEMPLATES: dict[str, dict[str, str]] = {
         "ar": "⚠️ في تعارض مع رحلة {other_client} الساعة {other_time} بتاريخ {date} (أقل من {window} دقيقة). فيك تأكد الحجز رغم هيك أو تختار وقت تاني.",
         "fr": "⚠️ Cela chevauche le trajet de {other_client} à {other_time} le {date} (moins de {window} min d'écart). Forcez la réservation ou choisissez un autre horaire.",
     },
+    "past_time_warning": {
+        "en": "This time has already passed today. Did you mean tomorrow, or a different time?",
+        "ar": "هيدا الوقت فات اليوم. تقصد بكرا، ولا وقت تاني؟",
+        "fr": "Cette heure est déjà passée aujourd'hui. Vouliez-vous dire demain, ou une autre heure ?",
+    },
     "list_bookings_summary": {
         "en": "You have {count} trip(s) scheduled.",
         "ar": "عندك {count} رحلة/رحلات مجدولة.",
@@ -727,6 +732,35 @@ def _parse_fare(value: Any) -> Decimal:
         return Decimal("0")
 
 
+def _is_past_datetime(trip_date: dt.date, trip_time: dt.time) -> bool:
+    """True if trip_date+trip_time is already behind now_beirut()."""
+    return dt.datetime.combine(trip_date, trip_time) < now_beirut()
+
+
+def _past_time_already_warned(history: list[dict]) -> bool:
+    """True if our own past_time_warning was the last thing said in this
+    conversation -- i.e. the driver is now retrying right after seeing it.
+
+    This is the "warn once" half of the past-time check (see
+    _handle_extract_booking/_handle_repeat_booking): rather than adding a
+    new tool argument for the model to fill in ("confirm_past_time" or
+    similar), a retry is recognized purely from conversation_history, the
+    same list already threaded through process_message -- no AI
+    classification changes needed. The warning text has no placeholders, so
+    an exact match on the backend-authored English (conversation_history
+    always keeps the original English, never the localized bubble text --
+    see dispatchChatRequest in app.js) is a reliable signal without needing
+    to match the specific date/time that triggered it.
+    """
+    if not history:
+        return False
+    last_turn = history[-1]
+    return (
+        last_turn.get("role") == "assistant"
+        and last_turn.get("content") == TEMPLATES["past_time_warning"]["en"]
+    )
+
+
 def _escape_like(value: str) -> str:
     """Escape SQL LIKE/ILIKE wildcards so a literal '%' or '_' in user input
     (e.g. a client name) can't be misinterpreted as a pattern wildcard."""
@@ -756,7 +790,7 @@ async def _emit(sio, event: str, data: dict) -> None:
 # --------------------------------------------------------------------------
 # Tool handlers
 # --------------------------------------------------------------------------
-async def _handle_extract_booking(db: AsyncSession, sio, args: dict, lang: str) -> dict:
+async def _handle_extract_booking(db: AsyncSession, sio, args: dict, lang: str, history: list[dict]) -> dict:
     required = ["client_name", "pickup", "dropoff", "trip_date", "trip_time"]
     missing = [f for f in required if not args.get(f)]
     if missing:
@@ -771,6 +805,9 @@ async def _handle_extract_booking(db: AsyncSession, sio, args: dict, lang: str) 
     trip_time = _parse_time(args.get("trip_time"))
     if trip_date is None or trip_time is None:
         return {"reply": t("invalid_datetime", lang), "action": "error"}
+
+    if _is_past_datetime(trip_date, trip_time) and not _past_time_already_warned(history):
+        return {"reply": t("past_time_warning", lang), "action": "past_time_warning"}
 
     conflict = await find_conflict(db, trip_date, trip_time)
     if conflict is not None:
@@ -829,7 +866,7 @@ async def _handle_extract_booking(db: AsyncSession, sio, args: dict, lang: str) 
     return {"reply": reply, "action": "booking_created", "booking": booking_out, "refresh": True}
 
 
-async def _handle_update_booking(db: AsyncSession, sio, args: dict, lang: str) -> dict:
+async def _handle_update_booking(db: AsyncSession, sio, args: dict, lang: str, history: list[dict]) -> dict:
     client_name = args.get("client_name")
     if not client_name:
         return {"reply": missing_fields_message(["client_name"], lang), "action": "missing_info"}
@@ -893,7 +930,7 @@ async def _handle_update_booking(db: AsyncSession, sio, args: dict, lang: str) -
     return {"reply": reply, "action": "booking_updated", "booking": booking_out, "refresh": True}
 
 
-async def _handle_cancel_booking(db: AsyncSession, sio, args: dict, lang: str) -> dict:
+async def _handle_cancel_booking(db: AsyncSession, sio, args: dict, lang: str, history: list[dict]) -> dict:
     client_name = args.get("client_name")
     if not client_name:
         return {"reply": missing_fields_message(["client_name"], lang), "action": "missing_info"}
@@ -920,7 +957,7 @@ async def _handle_cancel_booking(db: AsyncSession, sio, args: dict, lang: str) -
     return {"reply": reply, "action": "booking_cancelled", "booking": booking_out, "refresh": True}
 
 
-async def _handle_update_status(db: AsyncSession, sio, args: dict, lang: str) -> dict:
+async def _handle_update_status(db: AsyncSession, sio, args: dict, lang: str, history: list[dict]) -> dict:
     client_name = args.get("client_name")
     new_status = args.get("new_status")
     if not client_name or not new_status:
@@ -948,7 +985,7 @@ async def _handle_update_status(db: AsyncSession, sio, args: dict, lang: str) ->
     return {"reply": reply, "action": "status_updated", "booking": booking_out, "refresh": True}
 
 
-async def _handle_repeat_booking(db: AsyncSession, sio, args: dict, lang: str) -> dict:
+async def _handle_repeat_booking(db: AsyncSession, sio, args: dict, lang: str, history: list[dict]) -> dict:
     client_name = args.get("client_name")
     new_date_raw = args.get("new_date")
     if not client_name or not new_date_raw:
@@ -965,6 +1002,9 @@ async def _handle_repeat_booking(db: AsyncSession, sio, args: dict, lang: str) -
     new_time = _parse_time(args.get("new_time")) or last_booking.trip_time
     if new_date is None:
         return {"reply": t("invalid_datetime", lang), "action": "error"}
+
+    if _is_past_datetime(new_date, new_time) and not _past_time_already_warned(history):
+        return {"reply": t("past_time_warning", lang), "action": "past_time_warning"}
 
     conflict = await find_conflict(db, new_date, new_time)
     if conflict is not None:
@@ -1023,7 +1063,7 @@ async def _handle_repeat_booking(db: AsyncSession, sio, args: dict, lang: str) -
     return {"reply": reply, "action": "booking_created", "booking": booking_out, "refresh": True}
 
 
-async def _handle_list_bookings(db: AsyncSession, sio, args: dict, lang: str) -> dict:
+async def _handle_list_bookings(db: AsyncSession, sio, args: dict, lang: str, history: list[dict]) -> dict:
     today = today_beirut()
     date_filter = args.get("filter", "all")
 
@@ -1047,7 +1087,7 @@ async def _handle_list_bookings(db: AsyncSession, sio, args: dict, lang: str) ->
     return {"reply": reply, "action": "list_bookings", "bookings": bookings_out, "refresh": False}
 
 
-async def _handle_get_summary(db: AsyncSession, sio, args: dict, lang: str) -> dict:
+async def _handle_get_summary(db: AsyncSession, sio, args: dict, lang: str, history: list[dict]) -> dict:
     today = today_beirut()
     period = args.get("period", "today")
 
@@ -1182,7 +1222,7 @@ async def process_message(
         return {"reply": t("generic_error", lang), "action": "error"}
 
     try:
-        return await handler(db, sio, args, lang)
+        return await handler(db, sio, args, lang, history)
     except Exception:
         logger.exception("Tool handler '%s' raised with args=%r", name, args)
         await db.rollback()
