@@ -1,5 +1,7 @@
 """
-AI dispatch agent built on Groq (llama-3.3-70b-versatile).
+AI dispatch agent built on Groq. Model is configurable via the GROQ_MODEL
+env var (see below); defaults to openai/gpt-oss-20b after Groq deprecated
+llama-3.3-70b-versatile on 2026-06-17.
 
 The model's only job is CLASSIFICATION + EXTRACTION: given a free-text
 message (English, Lebanese Arabic, French or a mix), decide which of the
@@ -41,6 +43,9 @@ logger = logging.getLogger("taxigo.ai_agent")
 # whatever the model extracts against the same Lebanese place-name
 # dictionary the frontend uses (mirrored here), so the stored value is
 # deterministically English regardless of what the model actually returned.
+# Kept as-is after the GROQ_MODEL default moved to openai/gpt-oss-20b --
+# this safety net is cheap insurance and hasn't been re-verified as
+# unnecessary under the new model.
 # --------------------------------------------------------------------------
 LOCATION_EN_CANONICAL: dict[str, str] = {
     "beirut": "Beirut", "tripoli": "Tripoli", "saida": "Saida", "sidon": "Saida",
@@ -157,14 +162,16 @@ def normalize_location(text: Optional[str]) -> Optional[str]:
 # --------------------------------------------------------------------------
 # Simple-greeting short-circuit
 #
-# llama-3.3-70b-versatile is unreliable at tool calling for trivial
-# conversational input -- a bare "صباح النور" (or "hi"/"bonjour") makes it
+# llama-3.3-70b-versatile was unreliable at tool calling for trivial
+# conversational input -- a bare "صباح النور" (or "hi"/"bonjour") made it
 # emit its own native <function=chat>...</function> tag syntax instead of a
 # clean structured tool call, which fails validation on both the initial
 # request AND the temperature-nudged retry below, surfacing an error to the
 # driver for something as simple as a greeting. Since these messages never
 # need tool selection anyway, skip the Groq call entirely and answer from
 # TEMPLATES -- this also avoids burning API quota on a non-task message.
+# Left in place after moving the GROQ_MODEL default to openai/gpt-oss-20b;
+# not yet re-verified whether the new model still has this quirk.
 # --------------------------------------------------------------------------
 SIMPLE_GREETINGS = [
     "صباح الخير", "صباح النور", "مساء الخير", "مساء النور", "هلا", "مرحبا",
@@ -245,7 +252,7 @@ def extract_fallback_chat_text(error_body: Any) -> Optional[str]:
     return _unwrap_json_message(match.group(1).strip())
 
 
-GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 
 _client: Optional[AsyncGroq] = None
 
@@ -1123,9 +1130,11 @@ async def process_message(
     try:
         completion = await client.chat.completions.create(**completion_kwargs)
     except BadRequestError as exc:
-        # Groq occasionally emits llama-3.3-70b-versatile's native <function=...>
-        # tag syntax instead of a clean structured tool call ("tool_use_failed").
-        # This is a known model-side quirk, not caused by our input. If it's the
+        # Groq's llama-3.3-70b-versatile occasionally emitted its native
+        # <function=...> tag syntax instead of a clean structured tool call
+        # ("tool_use_failed"); this handler is kept for GROQ_MODEL, whichever
+        # model that currently is. This is a known model-side quirk, not
+        # caused by our input. If it's the
         # `chat` pseudo-tool specifically, retrying won't help (see
         # extract_fallback_chat_text docstring) -- recover the text directly
         # instead of burning another Groq call on a guaranteed repeat failure.

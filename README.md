@@ -7,7 +7,7 @@ A conversational AI dispatch assistant for independent taxi drivers in Lebanon. 
 ## Features
 
 - 💬 **Natural-language dispatch** — "Book Ali tomorrow 3pm from Hamra to the airport" just works, in English, Lebanese Arabic (script or Arabizi), or French.
-- 🧠 **Groq-powered agent** (`llama-3.3-70b-versatile`) classifies each message into one of 8 actions and extracts the details; all confirmations/errors are deterministic, bilingual templates — never AI-hallucinated text.
+- 🧠 **Groq-powered agent** (`openai/gpt-oss-20b`, configurable via `GROQ_MODEL`) classifies each message into one of 8 actions and extracts the details; all confirmations/errors are deterministic, bilingual templates — never AI-hallucinated text.
 - ⚠️ **Automatic conflict detection** — warns when two trips land within 60 minutes of each other, with a one-tap "book anyway" override.
 - ⏰ **Smart reminders** — a background job pings the driver (and every connected device, via Socket.IO) 28–32 minutes before each pickup, once per trip.
 - 📊 **Earnings you can trust** — "Earned" (completed trips only) vs. "Projected" (all active trips) are always kept separate; cancelled trips never count.
@@ -89,7 +89,8 @@ The frontend is static — no build step. Two ways to run it locally:
 
 | Variable | Description |
 |---|---|
-| `GROQ_API_KEY` | API key from [console.groq.com](https://console.groq.com); powers the chat agent (`llama-3.3-70b-versatile`). |
+| `GROQ_API_KEY` | API key from [console.groq.com](https://console.groq.com); powers the chat agent. |
+| `GROQ_MODEL` | (optional) Groq model id for the chat agent. Defaults to `openai/gpt-oss-20b`; Groq deprecated the previous default, `llama-3.3-70b-versatile`, on 2026-06-17. |
 | `DATABASE_URL` | PostgreSQL connection string. Accepts `postgres://`, `postgresql://`, or `postgresql+asyncpg://` — normalized to the asyncpg driver automatically. |
 | `FRONTEND_ORIGIN` | (optional) An additional CORS origin to allow, e.g. a separately-hosted frontend's URL, on top of the built-in localhost origins. |
 | `DEV_MODE` | (optional) Set to `1`/`true` to auto-create tables on startup via `create_all()` — convenient for a throwaway local dev database. Leave unset in production; Alembic (`alembic upgrade head`) should be the only source of schema truth there. |

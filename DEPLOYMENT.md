@@ -114,10 +114,12 @@ still-open and don't rely on `API_SECRET` alone for anything sensitive.
 
 ## About Groq's free-tier quota
 
-The free tier caps out at 100,000 tokens/day. This is easy to hit purely from
-health checks and normal testing — `/health` calls Groq for real (cached for
-5 minutes to limit this), and each chat message costs a few hundred to a few
-thousand tokens depending on conversation history length. If you see the
+The free tier caps daily tokens per model (the exact number depends on which
+`GROQ_MODEL` is active — check the [rate limits page](https://console.groq.com/docs/rate-limits)
+for the current one). This is easy to hit purely from health checks and
+normal testing — `/health` calls Groq for real (cached for 5 minutes to limit
+this), and each chat message costs a few hundred to a few thousand tokens
+depending on conversation history length. If you see the
 assistant reply with "having trouble reaching the AI service," check your
 [Groq console usage page](https://console.groq.com/settings/billing) before
 assuming something is broken — it's very likely you're rate-limited, and it
