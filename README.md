@@ -1,8 +1,8 @@
 # TaxiGo AI
 
-A conversational AI dispatch assistant for independent taxi drivers in Lebanon. Instead of filling out forms, the driver just chats — in English, Lebanese Arabic, or French — to add trips, update schedules, track earnings, and get reminded before pickups.
+A conversational AI dispatch assistant for independent taxi drivers in Lebanon. Instead of filling out forms, the driver just chats  in English, Lebanese Arabic, or French  to add trips, update schedules, track earnings, and get reminded before pickups.
 
-> Screenshots: _add screenshots of the chat panel, bookings sidebar, and weekly summary here before publishing._
+
 
 ## Features
 
