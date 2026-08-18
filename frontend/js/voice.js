@@ -128,10 +128,18 @@
       utterance.voice = voice;
       utterance.lang = voice.lang;
     } else {
+      // No matching voice installed for this language -- still set
+      // utterance.lang correctly (e.g. "ar-SA") rather than leaving it at
+      // the SpeechSynthesisUtterance default (the page/browser locale,
+      // which is effectively always English here). Most engines will pick
+      // *some* installed voice to read it with, but at least the language
+      // metadata -- and therefore pronunciation rules where the engine
+      // honors them -- is correct instead of silently defaulting to English.
       utterance.lang = (LANG_CHAINS[lang] || [lang])[0];
     }
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
+    console.log("TTS lang:", lang, "voice:", voice);
     global.speechSynthesis.speak(utterance);
   }
 

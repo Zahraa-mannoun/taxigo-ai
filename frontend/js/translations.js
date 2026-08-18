@@ -504,7 +504,7 @@
     'ibrahim': 'إبراهيم', 'youssef': 'يوسف', 'yousef': 'يوسف', 'bassem': 'باسم',
     'bassel': 'باسل', 'nadim': 'نديم', 'samir': 'سمير', 'elias': 'إلياس',
     'emile': 'إميل', 'antoine': 'أنطوان', 'roger': 'روجر', 'simon': 'سيمون',
-    'ryan': 'ريان',
+    'ryan': 'ريان', 'zahid': 'زاهد',
 
     // Female names
     'sara': 'سارة', 'sarah': 'سارة', 'maya': 'مايا', 'mia': 'ميا',

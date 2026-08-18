@@ -128,6 +128,19 @@
 
     result = result.replace(/\$(\d+(?:\.\d{2})?)/g, (match, amount) => formatMoneyShared(amount, state.lang));
 
+    // The backend's own format_date_localized/format_time_localized (Fix 5)
+    // already emit Arabic month names and ص/م markers directly -- text like
+    // "18 أغسطس 2026" never matches the ISO/AM-PM regexes above, so it skips
+    // formatDateShared/formatTimeShared (and therefore toArabicNumerals)
+    // entirely. Converting the whole result at the end catches those digits
+    // too, consistent with every other AR surface (booking cards, etc.)
+    // where no Western digit is ever shown. Safe to re-run over text the
+    // regexes above already converted -- Arabic-Indic digits aren't in the
+    // [0-9] class, so re-converting is a no-op there.
+    if (state.lang === "ar") {
+      result = toArabicNumerals(result);
+    }
+
     return result;
   }
 
@@ -561,17 +574,22 @@
       hideTyping();
 
       const clientNames = extractClientNames(result);
+      const localizedReply = localizeReplyText(result.reply, clientNames);
       if (result.action === "conflict" && result.conflict) {
-        addConflictBubble(result.conflict, localizeReplyText(result.reply, clientNames));
+        addConflictBubble(result.conflict, localizedReply);
       } else {
-        addChatBubble(localizeReplyText(result.reply, clientNames), "assistant");
+        addChatBubble(localizedReply, "assistant");
       }
       // Conversation history sent back to the AI keeps the original
       // backend-authored text -- only the on-screen bubble is localized.
       state.conversationHistory.push({ role: "assistant", content: result.reply });
 
       if (state.lastInputWasVoice) {
-        window.TaxiGoVoice.speak(result.reply, state.lang);
+        // Speak the localized text, not the raw backend reply -- result.reply
+        // is always English-authored (see comment above); speaking it with
+        // an Arabic/French utterance.lang just mispronounces English words
+        // instead of actually speaking the target language.
+        window.TaxiGoVoice.speak(localizedReply, state.lang);
         state.lastInputWasVoice = false;
       }
 
