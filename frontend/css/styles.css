@@ -378,26 +378,25 @@ html[dir="rtl"] .search-box input {
 }
 
 .filter-pills {
+  /* Was overflow-x: auto with a hidden scrollbar -- a pill that didn't fit
+     was still reachable by scrolling, but with no visible affordance that
+     scrolling was possible, it just looked cut off. wrap guarantees every
+     pill is always fully visible, on any sidebar/viewport width, without
+     relying on a hidden gesture. */
   display: flex;
-  gap: 8px;
-  overflow-x: auto;
+  flex-wrap: wrap;
+  gap: 6px 8px;
   padding-bottom: 4px;
-  scrollbar-width: none;
-}
-
-.filter-pills::-webkit-scrollbar {
-  display: none;
 }
 
 .filter-pill {
-  flex-shrink: 0;
-  padding: 8px 14px;
-  min-height: 36px;
+  padding: 6px 12px;
+  min-height: 34px;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--bg-card);
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
   transition: all var(--transition-fast);
