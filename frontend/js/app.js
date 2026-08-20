@@ -65,6 +65,18 @@
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }
 
+  // Purely client-side "has this trip's scheduled time arrived" check --
+  // uses the driver's own device clock (new Date()), not a server call, so
+  // it never changes the booking's actual status. trip_date+trip_time have
+  // no timezone designator, so the Date constructor parses them as local
+  // time -- exactly what we want since the driver's device clock IS the
+  // relevant clock here.
+  function isTimeArrived(booking) {
+    if (booking.status !== "confirmed") return false;
+    const scheduled = new Date(`${booking.trip_date}T${booking.trip_time}`);
+    return scheduled <= new Date();
+  }
+
   // Thin wrappers over the shared TaxiGoI18n formatters, bound to the
   // current UI language -- keeps call sites throughout this file unchanged.
   function formatTime(timeStr) {
@@ -274,11 +286,16 @@
     // swap the arrow glyph so it still points the right way.
     const arrow = state.lang === "ar" ? "←" : "→";
 
+    const timeArrived = isTimeArrived(booking);
+
     return `
-      <div class="booking-card status-${booking.status}" data-booking-id="${booking.id}">
+      <div class="booking-card status-${booking.status}${timeArrived ? " time-arrived" : ""}" data-booking-id="${booking.id}">
         <div class="booking-card-top">
           <span class="booking-client">${escapeHtml(clientDisplay)} <span class="booking-number">#${bookingNumber}</span></span>
-          <span class="status-badge status-${booking.status}">${statusLabel}</span>
+          <span class="booking-badges">
+            <span class="status-badge status-${booking.status}">${statusLabel}</span>
+            ${timeArrived ? `<span class="time-arrived-badge">${t("itsTime", state.lang)}</span>` : ""}
+          </span>
         </div>
         <div class="booking-route">${escapeHtml(pickupDisplay)} ${arrow} ${escapeHtml(dropoffDisplay)}</div>
         <div class="booking-meta">
@@ -982,6 +999,11 @@
     if (!navigator.onLine) showOfflineBanner();
     renderLastSynced();
     setInterval(renderLastSynced, 60000);
+
+    // Re-render so confirmed trips can pick up the "it's time" pulse as
+    // their scheduled time passes while the app stays open -- purely a
+    // re-render of already-fetched state.activeBookings, no network call.
+    setInterval(renderBookingsList, 45000);
 
     window.TaxiGoNotifications.init({ lang: state.lang });
 

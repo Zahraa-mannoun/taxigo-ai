@@ -13,6 +13,7 @@
   --success: #3ec98d;
   --success-bg: rgba(62, 201, 141, 0.12);
   --danger: #ef5a5a;
+  --danger-glow: rgba(239, 90, 90, 0.35);
 
   --radius-sm: 8px;
   --radius-md: 14px;
@@ -459,6 +460,43 @@ html[dir="rtl"] .search-box input {
   opacity: 0.6;
 }
 
+/* Confirmed trip whose scheduled time has arrived -- purely visual nudge,
+   never applied to in_progress/completed (see isTimeArrived() in app.js). */
+.booking-card.time-arrived {
+  border-inline-start-color: var(--danger);
+  animation: card-in var(--transition-base), time-arrived-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes time-arrived-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--danger-glow); }
+  50% { box-shadow: 0 0 0 6px rgba(239, 90, 90, 0); }
+}
+
+.time-arrived-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--danger);
+  background: var(--danger-glow);
+  white-space: nowrap;
+  animation: time-arrived-badge-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes time-arrived-badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .booking-card.time-arrived,
+  .time-arrived-badge {
+    animation: none;
+  }
+}
+
 .booking-card-top {
   display: flex;
   align-items: center;
@@ -475,6 +513,13 @@ html[dir="rtl"] .search-box input {
   font-weight: 600;
   font-size: 0.72rem;
   color: var(--text-muted);
+}
+
+.booking-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .status-badge {
