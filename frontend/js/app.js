@@ -288,10 +288,19 @@
 
     const timeArrived = isTimeArrived(booking);
 
+    // WhatsApp button carries everything openWhatsApp() needs as data-*
+    // attributes rather than looking booking up by id at click time -- cards
+    // render from several different arrays (active list, history, client-
+    // history panel), so a self-contained button avoids needing a single
+    // shared lookup table that would have to cover all of them.
+    const whatsappButton = booking.phone_number
+      ? `<button class="whatsapp-btn" data-action="whatsapp" data-client="${escapeHtml(booking.client_name)}" data-phone="${escapeHtml(booking.phone_number)}" data-pickup="${escapeHtml(booking.pickup)}" data-dropoff="${escapeHtml(booking.dropoff)}" data-date="${booking.trip_date}" data-time="${booking.trip_time}" title="${t("contactWhatsapp", state.lang)}" aria-label="${t("contactWhatsapp", state.lang)}"><svg viewBox="0 0 24 24"><path d="M7 18l-3 1 1-3a7.5 7.5 0 111.8 2.8L7 18z" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`
+      : "";
+
     return `
       <div class="booking-card status-${booking.status}${timeArrived ? " time-arrived" : ""}" data-booking-id="${booking.id}">
         <div class="booking-card-top">
-          <span class="booking-client">${escapeHtml(clientDisplay)} <span class="booking-number">#${bookingNumber}</span></span>
+          <span class="booking-client">${escapeHtml(clientDisplay)} <span class="booking-number">#${bookingNumber}</span>${whatsappButton}</span>
           <span class="booking-badges">
             <span class="status-badge status-${booking.status}">${statusLabel}</span>
             ${timeArrived ? `<span class="time-arrived-badge">${t("itsTime", state.lang)}</span>` : ""}
@@ -726,12 +735,39 @@
     document.getElementById("client-history-panel").classList.remove("open");
   }
 
+  // Opens WhatsApp (web or app, whichever the device resolves wa.me to)
+  // with a pre-filled message -- no API key, no Meta approval, no backend
+  // integration. The driver still has to tap send themselves; this only
+  // prepares the message.
+  function openWhatsApp(phoneNumber, booking, lang) {
+    const cleanNumber = phoneNumber.replace(/[^0-9]/g, "");
+    const message =
+      lang === "ar"
+        ? `مرحبا ${booking.client_name}، بخصوص رحلتك من ${booking.pickup} إلى ${booking.dropoff} بتاريخ ${booking.trip_date} الساعة ${booking.trip_time}`
+        : lang === "fr"
+        ? `Bonjour ${booking.client_name}, concernant votre trajet de ${booking.pickup} à ${booking.dropoff} le ${booking.trip_date} à ${booking.trip_time}`
+        : `Hi ${booking.client_name}, regarding your trip from ${booking.pickup} to ${booking.dropoff} on ${booking.trip_date} at ${booking.trip_time}`;
+
+    window.open(`https://wa.me/${cleanNumber}?text=${encodeURIComponent(message)}`, "_blank");
+  }
+
   // ---------------------------------------------------------------------
   // Booking card action delegation (bookings list + history list)
   // ---------------------------------------------------------------------
   async function handleBookingAction(action, id, clientName, btn) {
     if (action === "client-history") {
       openClientHistory(clientName);
+      return;
+    }
+    if (action === "whatsapp") {
+      const booking = {
+        client_name: clientName,
+        pickup: btn.dataset.pickup,
+        dropoff: btn.dataset.dropoff,
+        trip_date: btn.dataset.date,
+        trip_time: btn.dataset.time,
+      };
+      openWhatsApp(btn.dataset.phone, booking, state.lang);
       return;
     }
     if (action === "cancel") {

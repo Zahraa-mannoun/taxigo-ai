@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import Boolean, Date, DateTime, Numeric, Text, Time, func
+from sqlalchemy import Boolean, Date, DateTime, Numeric, String, Text, Time, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database import Base
@@ -42,6 +42,7 @@ class Booking(Base):
     fare: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=0)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="confirmed")
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    phone_number: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
     reminded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -61,6 +62,7 @@ class BookingCreate(BaseModel):
     trip_time: dt.time
     fare: Decimal = Field(default=Decimal("0"))
     notes: str = ""
+    phone_number: Optional[str] = None
     status: BookingStatus = "confirmed"
 
 
@@ -72,6 +74,7 @@ class BookingUpdate(BaseModel):
     trip_time: Optional[dt.time] = None
     fare: Optional[Decimal] = None
     notes: Optional[str] = None
+    phone_number: Optional[str] = None
     status: Optional[BookingStatus] = None
 
 
@@ -91,6 +94,7 @@ class BookingOut(BaseModel):
     fare: Decimal
     status: BookingStatus
     notes: str
+    phone_number: Optional[str] = None
     reminded: bool
     created_at: dt.datetime
 

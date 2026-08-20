@@ -151,6 +151,7 @@ async def force_book(payload: ForceBookRequest, request: Request, db: AsyncSessi
         trip_time=payload.trip_time,
         fare=payload.fare,
         notes=payload.notes,
+        phone_number=payload.phone_number,
         status=payload.status,
     )
     db.add(booking)

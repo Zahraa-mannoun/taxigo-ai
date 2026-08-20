@@ -323,6 +323,10 @@ TOOLS: list[dict[str, Any]] = [
                         "description": "Agreed fare/fee amount, if mentioned. Plain number, e.g. 20 -- but a numeric string is also accepted and coerced.",
                     },
                     "notes": {"type": "string", "description": "Any extra notes about the trip."},
+                    "phone_number": {
+                        "type": "string",
+                        "description": "Client's phone number, ONLY if the driver actually mentions one. Never ask for it -- it's optional.",
+                    },
                 },
                 "required": ["client_name", "pickup", "dropoff", "trip_date", "trip_time"],
             },
@@ -332,7 +336,7 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "update_booking",
-            "description": "Edit an existing trip's details (pickup, dropoff, date, time, fare or notes).",
+            "description": "Edit an existing trip's details (pickup, dropoff, date, time, fare, notes or phone number).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -347,6 +351,10 @@ TOOLS: list[dict[str, Any]] = [
                         "description": "New fare/fee amount. Plain number, e.g. 20 -- but a numeric string is also accepted and coerced.",
                     },
                     "notes": {"type": "string", "description": "New notes."},
+                    "phone_number": {
+                        "type": "string",
+                        "description": "New or updated client phone number, if the driver mentions adding/changing one. Optional -- never ask for it.",
+                    },
                 },
                 "required": ["client_name"],
             },
@@ -493,6 +501,11 @@ the driver what today's date is.
 - "fee", "fare", "fees", "أجرة", "التسعيرة", "السعر", "cost" all refer to the `fare` field.
 - The `fare` field must always be a plain number without currency symbols or
   quotes, e.g. 20 -- not "20" or "$20".
+- "his number is", "her number is", "phone", "call him at", "رقمه", "رقمها",
+  "رقم تلفونه", "numéro", "son numéro", "appelez-la au" all refer to the
+  optional `phone_number` field on extract_booking/update_booking. Only
+  include it if the driver actually states a number -- never ask for one,
+  and never treat its absence as missing information.
 - "بكرا", "baacher", "bukra", "tomorrow" -> next calendar day.
 - "هلق", "today", "aujourd'hui" -> today's date above.
 - Specific dates (e.g. "August 3rd", "3/8") should be resolved to YYYY-MM-DD
@@ -819,6 +832,7 @@ async def _handle_extract_booking(db: AsyncSession, sio, args: dict, lang: str, 
             "trip_time": trip_time.isoformat(),
             "fare": str(_parse_fare(args.get("fare"))),
             "notes": args.get("notes") or "",
+            "phone_number": args.get("phone_number") or None,
         }
         reply = t(
             "conflict_warning",
@@ -845,6 +859,7 @@ async def _handle_extract_booking(db: AsyncSession, sio, args: dict, lang: str, 
         trip_time=trip_time,
         fare=_parse_fare(args.get("fare")),
         notes=args.get("notes") or "",
+        phone_number=args.get("phone_number") or None,
         status="confirmed",
     )
     db.add(booking)
@@ -911,6 +926,8 @@ async def _handle_update_booking(db: AsyncSession, sio, args: dict, lang: str, h
         booking.fare = _parse_fare(args.get("fare"))
     if args.get("notes") is not None:
         booking.notes = args.get("notes")
+    if args.get("phone_number") is not None:
+        booking.phone_number = args.get("phone_number")
 
     await db.commit()
     await db.refresh(booking)
@@ -1016,6 +1033,7 @@ async def _handle_repeat_booking(db: AsyncSession, sio, args: dict, lang: str, h
             "trip_time": new_time.isoformat(),
             "fare": str(last_booking.fare),
             "notes": last_booking.notes,
+            "phone_number": last_booking.phone_number,
         }
         reply = t(
             "conflict_warning",
@@ -1042,6 +1060,7 @@ async def _handle_repeat_booking(db: AsyncSession, sio, args: dict, lang: str, h
         trip_time=new_time,
         fare=last_booking.fare,
         notes=last_booking.notes,
+        phone_number=last_booking.phone_number,
         status="confirmed",
     )
     db.add(new_booking)

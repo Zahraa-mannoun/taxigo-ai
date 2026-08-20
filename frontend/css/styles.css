@@ -508,6 +508,36 @@ html[dir="rtl"] .search-box input {
   font-size: 0.95rem;
 }
 
+.whatsapp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin-inline-start: 4px;
+  border: none;
+  border-radius: 50%;
+  background: #25d366;
+  color: #fff;
+  cursor: pointer;
+  vertical-align: middle;
+  flex-shrink: 0;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.whatsapp-btn:hover {
+  transform: scale(1.08);
+  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.25);
+}
+
+.whatsapp-btn svg {
+  width: 13px;
+  height: 13px;
+  stroke: #fff;
+  fill: none;
+}
+
 .booking-number {
   font-weight: 600;
   font-size: 0.72rem;
