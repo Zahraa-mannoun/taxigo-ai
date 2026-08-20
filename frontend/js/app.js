@@ -234,15 +234,19 @@
   // ---------------------------------------------------------------------
   function buildBookingCard(booking, opts) {
     const statusLabel = t(STATUS_KEY[booking.status] || "statusConfirmed", state.lang);
-    const showActions = opts && opts.showActions !== false;
+    // opts is undefined for the main "Bookings" list's call site (buildBookingCard(b),
+    // no second arg) -- must default to showing actions there, not hide them.
+    // ("opts && opts.showActions !== false" was falsy whenever opts was undefined,
+    // silently hiding every status/cancel button on that list.)
+    const showActions = !opts || opts.showActions !== false;
 
     let actionButtons = "";
     if (showActions && booking.status !== "cancelled" && booking.status !== "completed") {
       if (booking.status === "confirmed") {
-        actionButtons += `<button data-action="in_progress" data-id="${booking.id}">${t("markInProgress", state.lang)}</button>`;
+        actionButtons += `<button data-action="in_progress" data-id="${booking.id}" class="start">${t("startTrip", state.lang)}</button>`;
       }
       if (booking.status === "in_progress") {
-        actionButtons += `<button data-action="completed" data-id="${booking.id}">${t("markCompleted", state.lang)}</button>`;
+        actionButtons += `<button data-action="completed" data-id="${booking.id}" class="complete">${t("completeTrip", state.lang)}</button>`;
       }
       actionButtons += `<button data-action="cancel" data-id="${booking.id}" class="danger">${t("cancelBooking", state.lang)}</button>`;
     }
@@ -702,7 +706,7 @@
   // ---------------------------------------------------------------------
   // Booking card action delegation (bookings list + history list)
   // ---------------------------------------------------------------------
-  async function handleBookingAction(action, id, clientName) {
+  async function handleBookingAction(action, id, clientName, btn) {
     if (action === "client-history") {
       openClientHistory(clientName);
       return;
@@ -718,11 +722,23 @@
       return;
     }
     if (action === "in_progress" || action === "completed") {
+      // Direct REST call (PATCH /bookings/{id}/status), same endpoint the
+      // chat "mark in progress/completed" tool already uses -- bypasses the
+      // AI pipeline entirely, so this and chat-driven status changes can
+      // never disagree about what a status update actually does.
+      if (btn) {
+        btn.disabled = true;
+        btn.classList.add("loading");
+      }
       try {
         await api(`/bookings/${id}/status`, { method: "PATCH", body: JSON.stringify({ status: action }) });
-        refreshAll();
+        refreshAll(); // re-renders the card from fresh data -- no manual DOM patching needed
       } catch (err) {
-        window.alert(t("connectionError", state.lang));
+        showToast(t("connectionError", state.lang));
+        if (btn) {
+          btn.disabled = false;
+          btn.classList.remove("loading");
+        }
       }
     }
   }
@@ -731,7 +747,7 @@
     document.getElementById(containerId).addEventListener("click", (e) => {
       const btn = e.target.closest("button[data-action]");
       if (!btn) return;
-      handleBookingAction(btn.getAttribute("data-action"), btn.getAttribute("data-id"), btn.getAttribute("data-client"));
+      handleBookingAction(btn.getAttribute("data-action"), btn.getAttribute("data-id"), btn.getAttribute("data-client"), btn);
     });
   }
 
