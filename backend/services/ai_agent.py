@@ -309,23 +309,23 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "extract_booking",
-            "description": "Create a brand new trip/booking for a client.",
+            "description": "Create a new trip for a client.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "client_name": {"type": "string", "description": "Name of the client/passenger."},
+                    "client_name": {"type": "string", "description": "Client's name."},
                     "pickup": {"type": "string", "description": "Pickup location."},
-                    "dropoff": {"type": "string", "description": "Drop-off / destination location."},
+                    "dropoff": {"type": "string", "description": "Drop-off location."},
                     "trip_date": {"type": "string", "description": "Trip date resolved to YYYY-MM-DD."},
                     "trip_time": {"type": "string", "description": "Trip time resolved to 24h HH:MM."},
                     "fare": {
                         "type": ["number", "string"],
-                        "description": "Agreed fare/fee amount, if mentioned. Plain number, e.g. 20 -- but a numeric string is also accepted and coerced.",
+                        "description": "Fare amount, if mentioned. Plain number, e.g. 20.",
                     },
                     "notes": {"type": "string", "description": "Any extra notes about the trip."},
                     "phone_number": {
                         "type": "string",
-                        "description": "Client's phone number, ONLY if the driver actually mentions one. Never ask for it -- it's optional.",
+                        "description": "Client's phone number, only if mentioned. Never ask for it.",
                     },
                 },
                 "required": ["client_name", "pickup", "dropoff", "trip_date", "trip_time"],
@@ -336,24 +336,24 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "update_booking",
-            "description": "Edit an existing trip's details (pickup, dropoff, date, time, fare, notes or phone number).",
+            "description": "Edit an existing trip (pickup, dropoff, date, time, fare, notes, phone).",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "client_name": {"type": "string", "description": "Name of the client whose trip is being edited."},
-                    "existing_trip_date": {"type": "string", "description": "Date (YYYY-MM-DD) of the trip to edit, if known, to disambiguate multiple trips."},
+                    "client_name": {"type": "string", "description": "Client whose trip is being edited."},
+                    "existing_trip_date": {"type": "string", "description": "Date (YYYY-MM-DD) of the trip to edit, if known."},
                     "pickup": {"type": "string", "description": "New pickup location."},
                     "dropoff": {"type": "string", "description": "New drop-off location."},
                     "trip_date": {"type": "string", "description": "New trip date (YYYY-MM-DD)."},
                     "trip_time": {"type": "string", "description": "New trip time (24h HH:MM)."},
                     "fare": {
                         "type": ["number", "string"],
-                        "description": "New fare/fee amount. Plain number, e.g. 20 -- but a numeric string is also accepted and coerced.",
+                        "description": "New fare amount. Plain number, e.g. 20.",
                     },
                     "notes": {"type": "string", "description": "New notes."},
                     "phone_number": {
                         "type": "string",
-                        "description": "New or updated client phone number, if the driver mentions adding/changing one. Optional -- never ask for it.",
+                        "description": "New/updated client phone number, if mentioned. Never ask for it.",
                     },
                 },
                 "required": ["client_name"],
@@ -368,7 +368,7 @@ TOOLS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "client_name": {"type": "string", "description": "Name of the client whose trip is being cancelled."},
+                    "client_name": {"type": "string", "description": "Client whose trip to cancel."},
                     "trip_date": {"type": "string", "description": "Date (YYYY-MM-DD) of the trip to cancel, if known."},
                 },
                 "required": ["client_name"],
@@ -379,7 +379,7 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "update_status",
-            "description": "Change the status of a trip (confirmed, in_progress or completed).",
+            "description": "Change the status of a trip.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -395,7 +395,7 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "repeat_booking",
-            "description": "Clone the client's most recent trip onto a new date/time.",
+            "description": "Clone the client's last trip onto a new date/time.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -411,14 +411,14 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "list_bookings",
-            "description": "Show the upcoming schedule / trip list.",
+            "description": "Show the trip schedule.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "filter": {
                         "type": "string",
                         "enum": ["today", "tomorrow", "week", "all"],
-                        "description": "Always include this. Use 'all' if the driver didn't specify a date range.",
+                        "description": "Use 'all' if unspecified.",
                     },
                     "client_name": {"type": "string", "description": "Only trips for this client, if mentioned."},
                 },
@@ -430,14 +430,14 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_summary",
-            "description": "Give the driver a summary of trips and earnings.",
+            "description": "Trip/earnings summary for a period.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "period": {
                         "type": "string",
                         "enum": ["today", "week", "all"],
-                        "description": "Always include this. Use 'today' if the driver didn't specify a period.",
+                        "description": "Use 'today' if unspecified.",
                     },
                 },
                 "required": ["period"],
@@ -466,33 +466,30 @@ the driver what today's date is.
 
 ## The 8 things you can recognize
 1. extract_booking -- add a brand new trip.
-   Lebanese trigger words/phrases: "بدي احجز", "احجزلي", "زبون جديد", "ضيفلي حجز",
-   "في عندي طلعة", "بدي زبط رحلة لـ", "عندي كليان جديد", "خدني احجز" and Arabizi like
-   "biddi ehjez", "3andi trip jdid", "zbotli booking". French: "réserver", "ajouter",
-   "nouveau trajet", "prendre", "conduire" (combined with "demain"/"aujourd'hui").
+   Lebanese trigger words/phrases: "بدي احجز", "احجزلي", "زبون جديد", "ضيفلي حجز"
+   and Arabizi like "biddi ehjez", "3andi trip jdid", "zbotli booking". French:
+   "réserver", "ajouter", "nouveau trajet".
 2. update_booking -- change details of an existing trip (pickup/dropoff/date/time/fare/notes).
-   Triggers: "بدل الموعد", "غيرلي الوقت", "عدلّي الحجز", "بدي بدل مكان التحميل",
-   "بدلّي الأجرة", "ghayerli el waet", "3adelli el booking". French: "modifier",
-   "changer", "mettre à jour", "corriger".
+   Triggers: "بدل الموعد", "غيرلي الوقت", "عدلّي الحجز", "بدلّي الأجرة",
+   "ghayerli el waet", "3adelli el booking". French: "modifier", "changer",
+   "mettre à jour".
 3. cancel_booking -- cancel a trip entirely.
-   Triggers: "الغي الحجز", "بطل الرحلة", "ما عاد في داعي للحجز", "cancel el trip",
-   "شطبلي الرحلة". French: "annuler", "supprimer", "effacer".
+   Triggers: "الغي الحجز", "بطل الرحلة", "شطبلي الرحلة", "cancel el trip".
+   French: "annuler", "supprimer", "effacer".
 4. update_status -- mark a trip in_progress/completed (never used for cancelling).
-   Triggers: "الزبون طلع", "عم روح عالزبون", "وصلت", "خلصت الرحلة", "خلص التوصيلة",
-   "sar b tari2", "khalasit el trip", "picked up the client". French: "commencé",
-   "démarré", "terminé", "livré", "en route".
+   Triggers: "الزبون طلع", "وصلت", "خلصت الرحلة", "خلص التوصيلة", "sar b tari2",
+   "khalasit el trip", "picked up the client". French: "commencé", "démarré",
+   "terminé", "livré".
 5. repeat_booking -- clone the client's last trip onto a new date.
    Triggers: "نفس الرحلة يلي فاتت", "كرر الحجز", "زي المرة اللي فاتت بس بكرا",
    "same trip as last time", "rep33tili nafs el booking". French: "répéter",
-   "même trajet", "encore", "de nouveau".
+   "même trajet", "encore".
 6. list_bookings -- show the schedule.
    Triggers: "شو في اليوم", "وريني الحجوزات", "شو عندي رحلات بكرا", "shu 3andi l youm",
-   "warrini el schedule". French: "voir", "afficher", "planning", "horaire",
-   "mes réservations".
+   "warrini el schedule". French: "planning", "horaire", "mes réservations".
 7. get_summary -- daily/weekly earnings summary.
    Triggers: "قديش ربحت اليوم", "كم كسبت", "ملخص اليوم", "addeh rbe7et",
-   "how much did I make". French: "résumé", "combien", "gains", "aujourd'hui",
-   "bilan".
+   "how much did I make". French: "résumé", "combien", "gains", "bilan".
 8. chat -- anything else (greetings, small talk, questions, in any of the three
    languages including French). Do NOT call a tool; just reply naturally in your
    message content.
@@ -1168,8 +1165,14 @@ async def process_message(
     except RuntimeError:
         return {"reply": t("ai_error", lang), "action": "error"}
 
+    # Trimmed from 12 to 8 to cut per-request token cost -- safe because the
+    # only backend logic that depends on conversation history at all is
+    # _past_time_already_warned(), which reads the *unsliced* `history`
+    # parameter directly (see its call sites below), not this Groq-bound
+    # `messages` list. 8 turns is 4 full exchanges, comfortably more than
+    # the 1 prior exchange that conflict-retry / past-time-retry need.
     messages: list[dict[str, Any]] = [{"role": "system", "content": build_system_prompt(lang)}]
-    for turn in history[-12:]:
+    for turn in history[-8:]:
         role = turn.get("role")
         content = turn.get("content")
         if role in ("user", "assistant") and content:
