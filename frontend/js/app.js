@@ -239,6 +239,10 @@
     // ("opts && opts.showActions !== false" was falsy whenever opts was undefined,
     // silently hiding every status/cancel button on that list.)
     const showActions = !opts || opts.showActions !== false;
+    // Separate from showActions: the client-history panel wants Start/
+    // Complete/Cancel visible as normal, just not a button that reopens the
+    // same panel for the same client it's already showing.
+    const showClientHistoryButton = !opts || opts.showClientHistoryButton !== false;
 
     let actionButtons = "";
     if (showActions && booking.status !== "cancelled" && booking.status !== "completed") {
@@ -250,10 +254,12 @@
       }
       actionButtons += `<button data-action="cancel" data-id="${booking.id}" class="danger">${t("cancelBooking", state.lang)}</button>`;
     }
-    // The data-client attribute drives the /clients/{name}/history lookup,
-    // so it MUST stay the original stored name -- only the visible text
-    // (clientDisplay, below) is translated.
-    actionButtons += `<button data-action="client-history" data-client="${escapeHtml(booking.client_name)}">${t("viewClientHistory", state.lang)}</button>`;
+    if (showClientHistoryButton) {
+      // The data-client attribute drives the /clients/{name}/history lookup,
+      // so it MUST stay the original stored name -- only the visible text
+      // (clientDisplay, below) is translated.
+      actionButtons += `<button data-action="client-history" data-client="${escapeHtml(booking.client_name)}">${t("viewClientHistory", state.lang)}</button>`;
+    }
 
     // Location and (common Lebanese first) names are translated for display
     // only -- the underlying booking object / DB values are never touched.
@@ -691,7 +697,7 @@
       document.getElementById("client-history-trips").textContent =
         state.lang === "ar" ? toArabicNumerals(data.total_trips) : String(data.total_trips);
       document.getElementById("client-history-list").innerHTML = data.trips.length
-        ? data.trips.map((b) => buildBookingCard(b, { showActions: false })).join("")
+        ? data.trips.map((b) => buildBookingCard(b, { showClientHistoryButton: false })).join("")
         : `<div class="empty-state">${t("noBookings", state.lang)}</div>`;
     } catch (err) {
       document.getElementById("client-history-list").innerHTML = `<div class="empty-state">${t("loadError", state.lang)}</div>`;
