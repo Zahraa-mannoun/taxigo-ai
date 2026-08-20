@@ -542,25 +542,20 @@
     if (!name) return name;
 
     if (targetLang === 'ar') {
-      const lower = name.toLowerCase().trim();
-      // Check full name match first
-      if (NAMES[lower]) return NAMES[lower];
-      // Check first word only (in case full name like "Ahmad Khalil")
-      const firstName = lower.split(' ')[0];
-      if (NAMES[firstName]) {
-        return NAMES[firstName] + (name.split(' ').length > 1 ? ' ' + name.split(' ').slice(1).join(' ') : '');
-      }
-      return name; // return original if no translation found
+      const words = name.trim().split(' ');
+      const translated = words.map(word => {
+        const lower = word.toLowerCase();
+        return NAMES[lower] || word;
+      });
+      return translated.join(' ');
     }
 
     if (targetLang === 'en' || targetLang === 'fr') {
-      const trimmed = name.trim();
-      if (NAMES_REVERSE[trimmed]) return NAMES_REVERSE[trimmed];
-      const firstName = trimmed.split(' ')[0];
-      if (NAMES_REVERSE[firstName]) {
-        return NAMES_REVERSE[firstName] + (trimmed.split(' ').length > 1 ? ' ' + trimmed.split(' ').slice(1).join(' ') : '');
-      }
-      return name;
+      const words = name.trim().split(' ');
+      const translated = words.map(word => {
+        return NAMES_REVERSE[word] || word;
+      });
+      return translated.join(' ');
     }
 
     return name;
