@@ -14,7 +14,7 @@
 // background for the *next* load -- without a version bump, a browser that
 // already has the shell cached can keep running old JS/CSS indefinitely,
 // including JS containing already-fixed bugs.
-const CACHE_NAME = "taxigo-ai-shell-v3";
+const CACHE_NAME = "taxigo-ai-shell-v4";
 const API_CACHE_NAME = "taxigo-ai-api-v1";
 const CURRENT_CACHES = [CACHE_NAME, API_CACHE_NAME];
 
