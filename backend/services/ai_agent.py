@@ -252,6 +252,39 @@ def extract_fallback_chat_text(error_body: Any) -> Optional[str]:
     return _unwrap_json_message(match.group(1).strip())
 
 
+_FALLBACK_CHAT_ARGS_RE = re.compile(r'"name":\s*"chat".*?"arguments":\s*(.+?)"?\s*\}?\s*$', re.DOTALL)
+
+
+def extract_fallback_chat_text_v2(error_body: Any) -> Optional[str]:
+    """Recover the reply text from a Groq tool_use_failed error caused by
+    openai/gpt-oss-20b's malformed `chat` pseudo-tool pattern:
+    {"name": "chat", "arguments": <raw unescaped text>} -- here `arguments`
+    is raw text, not a valid JSON string/object, unlike llama-3.3-70b-versatile's
+    <function=chat>...</function> tag syntax that extract_fallback_chat_text()
+    (above) handles. Kept as a separate parser -- rather than folded into the
+    one above -- so that one is untouched cheap insurance if we ever roll
+    back models; this one is tried alongside it, not instead of it.
+
+    Returns None if `error_body` doesn't match this specific shape.
+    """
+    if isinstance(error_body, dict):
+        failed_generation = error_body.get("error", {}).get("failed_generation")
+    else:
+        failed_generation = error_body
+    if not isinstance(failed_generation, str):
+        return None
+
+    match = _FALLBACK_CHAT_ARGS_RE.search(failed_generation)
+    if not match:
+        return None
+    text = match.group(1).strip()
+    # Clean up leading/trailing quotes if present (e.g. the model happened to
+    # quote `arguments` properly this time -- (.+?) still grabs the opening
+    # quote since it starts matching right after "arguments": ).
+    text = text.strip('"')
+    return text if text else None
+
+
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 
 _client: Optional[AsyncGroq] = None
@@ -1200,7 +1233,11 @@ async def process_message(
         # `chat` pseudo-tool specifically, retrying won't help (see
         # extract_fallback_chat_text docstring) -- recover the text directly
         # instead of burning another Groq call on a guaranteed repeat failure.
-        fallback_text = extract_fallback_chat_text(exc.body)
+        # Try both parsers: the tag-based one above (for llama-3.3-70b-versatile)
+        # and the raw-JSON-args one (for openai/gpt-oss-20b) -- exactly one of
+        # them matches whichever model is currently active, and neither ever
+        # matches a genuine malformed call on a real tool.
+        fallback_text = extract_fallback_chat_text(exc.body) or extract_fallback_chat_text_v2(exc.body)
         if fallback_text is not None:
             return {"reply": fallback_text or t("generic_error", lang), "action": "chat"}
 
@@ -1213,7 +1250,7 @@ async def process_message(
                 **{**completion_kwargs, "temperature": 0.5}
             )
         except BadRequestError as retry_exc:
-            fallback_text = extract_fallback_chat_text(retry_exc.body)
+            fallback_text = extract_fallback_chat_text(retry_exc.body) or extract_fallback_chat_text_v2(retry_exc.body)
             if fallback_text is not None:
                 return {"reply": fallback_text or t("generic_error", lang), "action": "chat"}
             logger.exception("Groq retry after tool_use_failed also failed")
