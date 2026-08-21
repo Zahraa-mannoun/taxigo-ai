@@ -91,6 +91,7 @@ The frontend is static — no build step. Two ways to run it locally:
 |---|---|
 | `GROQ_API_KEY` | API key from [console.groq.com](https://console.groq.com); powers the chat agent. |
 | `GROQ_MODEL` | (optional) Groq model id for the chat agent. Defaults to `openai/gpt-oss-20b`; Groq deprecated the previous default, `llama-3.3-70b-versatile`, on 2026-06-17. |
+| `GROQ_API_KEY_BACKUP1` / `GROQ_API_KEY_BACKUP2` | (optional) Backup Groq API keys. If the primary key hits a 429 rate limit, the same request automatically retries on the next configured key. |
 | `DATABASE_URL` | PostgreSQL connection string. Accepts `postgres://`, `postgresql://`, or `postgresql+asyncpg://` — normalized to the asyncpg driver automatically. |
 | `FRONTEND_ORIGIN` | (optional) An additional CORS origin to allow, e.g. a separately-hosted frontend's URL, on top of the built-in localhost origins. |
 | `DEV_MODE` | (optional) Set to `1`/`true` to auto-create tables on startup via `create_all()` — convenient for a throwaway local dev database. Leave unset in production; Alembic (`alembic upgrade head`) should be the only source of schema truth there. |

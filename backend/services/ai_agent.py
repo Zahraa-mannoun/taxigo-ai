@@ -22,7 +22,7 @@ import re
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
-from groq import AsyncGroq, BadRequestError
+from groq import AsyncGroq, BadRequestError, RateLimitError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -287,18 +287,88 @@ def extract_fallback_chat_text_v2(error_body: Any) -> Optional[str]:
 
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 
-_client: Optional[AsyncGroq] = None
+# --------------------------------------------------------------------------
+# Multi-key fallback: up to 3 Groq API keys (primary + 2 backups), tried in
+# order for the SAME request whenever the current one hits a rate limit
+# (429/RateLimitError). Keeps a single client cached per slot rather than
+# reconstructing AsyncGroq on every call. Only RateLimitError triggers moving
+# to the next key -- any other error (BadRequestError, etc.) is a real
+# problem with the request, not the key, and propagates immediately so the
+# existing tool_use_failed handling in process_message still applies.
+# --------------------------------------------------------------------------
+_GROQ_KEY_SLOTS: tuple[str, ...] = ("primary", "backup1", "backup2")
+_GROQ_KEY_ENV_VARS: dict[str, str] = {
+    "primary": "GROQ_API_KEY",
+    "backup1": "GROQ_API_KEY_BACKUP1",
+    "backup2": "GROQ_API_KEY_BACKUP2",
+}
+
+_clients_by_slot: dict[str, AsyncGroq] = {}
+
+
+def _configured_groq_slots() -> list[str]:
+    """Slot names, in fallback order, for which an API key is actually set."""
+    return [slot for slot in _GROQ_KEY_SLOTS if os.getenv(_GROQ_KEY_ENV_VARS[slot])]
+
+
+def _client_for_slot(slot: str) -> AsyncGroq:
+    if slot not in _clients_by_slot:
+        api_key = os.getenv(_GROQ_KEY_ENV_VARS[slot])
+        if not api_key:
+            raise RuntimeError(f"{_GROQ_KEY_ENV_VARS[slot]} is not configured")
+        # max_retries=0: the SDK's own default is to retry a 429 a couple
+        # times with its own backoff BEFORE ever raising RateLimitError to
+        # us, which would silently add latency and could mask a rate limit
+        # that clears within that window -- masking is harmless but the
+        # delay isn't "no exponential backoff, just switch keys" as asked.
+        # Our own key-switching loop is the only retry behavior we want.
+        _clients_by_slot[slot] = AsyncGroq(api_key=api_key, max_retries=0)
+    return _clients_by_slot[slot]
 
 
 def get_client() -> AsyncGroq:
-    """Lazily construct the Groq async client so import never fails without a key."""
-    global _client
-    if _client is None:
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise RuntimeError("GROQ_API_KEY is not configured")
-        _client = AsyncGroq(api_key=api_key)
-    return _client
+    """Lazily construct the primary Groq async client so import never fails
+    without a key. Used directly by check_ai_connectivity()'s single-key
+    health ping; process_message() goes through
+    create_completion_with_key_fallback() instead, for automatic rotation
+    across all configured keys on RateLimitError.
+    """
+    slots = _configured_groq_slots()
+    if not slots:
+        raise RuntimeError("GROQ_API_KEY is not configured")
+    return _client_for_slot(slots[0])
+
+
+async def create_completion_with_key_fallback(**completion_kwargs: Any):
+    """Try the SAME chat-completion request across every configured Groq key
+    (primary, backup1, backup2, in that order), advancing to the next key
+    only on RateLimitError (429). Logs which slot succeeded -- never the key
+    value itself. Re-raises the last RateLimitError if every configured key
+    is currently rate-limited; any non-RateLimitError exception propagates
+    immediately from whichever key raised it, since that's a request
+    problem, not a quota problem, and switching keys wouldn't help.
+    """
+    slots = _configured_groq_slots()
+    if not slots:
+        raise RuntimeError("GROQ_API_KEY is not configured")
+
+    last_error: Optional[RateLimitError] = None
+    for slot in slots:
+        client = _client_for_slot(slot)
+        try:
+            completion = await client.chat.completions.create(**completion_kwargs)
+        except RateLimitError as exc:
+            logger.warning("Groq key slot '%s' hit a rate limit (429); trying next key if configured", slot)
+            last_error = exc
+            continue
+        if slot != slots[0]:
+            logger.warning("Groq request succeeded using fallback key slot '%s'", slot)
+        else:
+            logger.info("Groq request succeeded using key slot '%s'", slot)
+        return completion
+
+    assert last_error is not None  # slots is non-empty, so the loop always sets this before falling through
+    raise last_error
 
 
 _AI_HEALTH_CACHE_SECONDS = 300
@@ -1212,9 +1282,7 @@ async def process_message(
     if is_simple_greeting(message):
         return {"reply": t("greeting", lang), "action": "chat"}
 
-    try:
-        client = get_client()
-    except RuntimeError:
+    if not _configured_groq_slots():
         return {"reply": t("ai_error", lang), "action": "error"}
 
     messages: list[dict[str, Any]] = [{"role": "system", "content": build_system_prompt(lang)}]
@@ -1236,7 +1304,13 @@ async def process_message(
         "max_tokens": 1024,
     }
     try:
-        completion = await client.chat.completions.create(**completion_kwargs)
+        completion = await create_completion_with_key_fallback(**completion_kwargs)
+    except RateLimitError:
+        # create_completion_with_key_fallback() already tried every
+        # configured key (primary, backup1, backup2) for this exact request
+        # -- reaching here means all of them are currently rate-limited.
+        logger.error("All configured Groq API keys are rate-limited")
+        return {"reply": t("ai_error", lang), "action": "error"}
     except BadRequestError as exc:
         # Groq's llama-3.3-70b-versatile occasionally emitted its native
         # <function=...> tag syntax instead of a clean structured tool call
@@ -1259,9 +1333,12 @@ async def process_message(
         # so nudge it up slightly to escape the same bad generation.
         logger.warning("Groq tool-call generation failed, retrying with nudged temperature: %s", exc)
         try:
-            completion = await client.chat.completions.create(
+            completion = await create_completion_with_key_fallback(
                 **{**completion_kwargs, "temperature": 0.5}
             )
+        except RateLimitError:
+            logger.error("All configured Groq API keys are rate-limited (on retry)")
+            return {"reply": t("ai_error", lang), "action": "error"}
         except BadRequestError as retry_exc:
             fallback_text = extract_fallback_chat_text(retry_exc.body) or extract_fallback_chat_text_v2(retry_exc.body)
             if fallback_text is not None:
